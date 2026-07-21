@@ -13,6 +13,13 @@ from eiye_db.config import settings
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.configure()
+    if settings.api_key is None:
+        import logging
+
+        logging.getLogger("eiye_db").warning(
+            "EIYE_API_KEY is unset (open dev mode): every caller is admin — "
+            "can approve semantics and view raw PII. Set keys before exposing this."
+        )
     if settings.pii_ner_enabled:
         # Fail loud at boot if the NER model is missing, rather than 500-ing (or
         # worse, silently under-redacting) on the first query.

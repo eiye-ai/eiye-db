@@ -64,6 +64,29 @@ class RelationshipRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class MetricRow(Base):
+    """A named, governed query template (the metric catalog).
+
+    Trust model mirrors relationships: human-authored metrics (source="human",
+    created with the admin key) are approved on creation; agent-proposed ones
+    (source="proposed") stay candidates until a human approves. Only approved
+    metrics can be executed.
+    """
+
+    __tablename__ = "metrics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    datasource_id: Mapped[str] = mapped_column(String(36))
+    request_template: Mapped[dict] = mapped_column(JSON)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    source: Mapped[str] = mapped_column(String(20))  # human | proposed
+    status: Mapped[str] = mapped_column(String(20))  # approved | candidate | rejected
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class AuditRow(Base):
     __tablename__ = "audit_logs"
 

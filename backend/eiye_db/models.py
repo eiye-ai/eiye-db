@@ -151,6 +151,24 @@ class RelationshipUpdate(BaseModel):
     status: Literal["approved", "rejected"]
 
 
+class MetricCreate(BaseModel):
+    """A governed query template. `params` maps name -> {"type": "string"|"number",
+    "default": optional}; the template references them as {name} placeholders."""
+
+    name: str
+    description: str = ""
+    datasource_id: str
+    request_template: dict[str, Any]
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class MetricQuery(BaseModel):
+    """Execute an approved metric with concrete parameter values."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    limit: int = Field(100, ge=1, le=1000)
+
+
 class SourceQueryRequest(BaseModel):
     """A source-scoped query. `request` is connector-specific:
     postgres: {"sql": "SELECT ..."} · filesystem: {"path": "rel/file.csv"} ·

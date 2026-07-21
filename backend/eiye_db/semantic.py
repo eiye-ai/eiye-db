@@ -368,7 +368,7 @@ def export_yaml() -> str:
     table/column names containing YAML metacharacters stay intact.
     """
     q = json.dumps  # JSON string escaping == YAML double-quoted scalar escaping
-    lines = ["# eiye_db semantic model — approved relationships", "relationships:"]
+    lines = ["# eiye_db semantic model — approved relationships and metrics", "relationships:"]
     approved = list_relationships(status="approved")
     if not approved:
         lines.append("  []")

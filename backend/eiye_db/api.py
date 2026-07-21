@@ -3,12 +3,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from eiye_db import audit, metrics, registry, semantic, service
+from eiye_db import audit, catalog, metrics, registry, semantic, service
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import (
     DataSource,
     DataSourceCreate,
     DataSourceUpdate,
+    MetricCreate,
+    MetricQuery,
     RelationshipUpdate,
     SourceQueryRequest,
     SourceQueryResponse,
@@ -154,7 +156,72 @@ def semantic_review(
 @router.get("/semantic/export", response_class=PlainTextResponse)
 def semantic_export(identity: Identity = Depends(require_api_key)):
     """The approved semantic model as YAML (semantic-layer-as-code)."""
-    return semantic.export_yaml()
+    return semantic.export_yaml() + "\n".join(catalog.export_yaml_lines()) + "\n"
+
+
+@router.post("/semantic/metrics", status_code=201)
+def metric_create(req: MetricCreate, identity: Identity = Depends(require_api_key)):
+    # Human authorship of governed definitions is the trust anchor: admin only,
+    # and the result is approved (executable) immediately.
+    if not identity.is_admin:
+        raise HTTPException(403, "metric creation requires the admin API key")
+    if registry.get(req.datasource_id) is None:
+        raise HTTPException(404, "datasource not found")
+    try:
+        metric = catalog.create(
+            req.name, req.description, req.datasource_id, req.request_template, req.params, source="human"
+        )
+    except catalog.CatalogError as e:
+        raise HTTPException(400, str(e))
+    audit.record("create", "metric", metric["id"], identity.key_id, req.datasource_id, details={"name": req.name})
+    return metric
+
+
+@router.get("/semantic/metrics")
+def metric_list(status: str | None = None, identity: Identity = Depends(require_api_key)):
+    return catalog.list_metrics(status=status)
+
+
+@router.put("/semantic/metrics/{metric_id}/review")
+def metric_review(metric_id: str, req: RelationshipUpdate, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "metric review requires the admin API key")
+    metric, previous = catalog.set_status(metric_id, req.status)
+    if metric is None:
+        raise HTTPException(404, "metric not found")
+    audit.record(
+        "review_metric",
+        "metric",
+        metric_id,
+        identity.key_id,
+        details={"old_status": previous, "new_status": req.status, "name": metric["name"]},
+    )
+    return metric
+
+
+@router.delete("/semantic/metrics/{metric_id}", status_code=204)
+def metric_delete(metric_id: str, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "metric deletion requires the admin API key")
+    if not catalog.delete(metric_id):
+        raise HTTPException(404, "metric not found")
+    audit.record("delete", "metric", metric_id, identity.key_id)
+
+
+@router.post("/semantic/metrics/{metric_id}/query")
+async def metric_query(metric_id: str, req: MetricQuery, identity: Identity = Depends(require_api_key)):
+    try:
+        return await service.run_metric(metric_id, req.params, req.limit, identity.key_id)
+    except service.NotFoundError:
+        raise HTTPException(404, "metric not found")
+    except catalog.MetricNotApproved as e:
+        raise HTTPException(409, str(e))
+    except catalog.CatalogError as e:
+        raise HTTPException(400, str(e))
+    except ConnectorError as e:
+        raise HTTPException(502, str(e))
+    except TimeoutError:
+        raise HTTPException(504, "query timed out")
 
 
 @router.post("/query", response_model=SourceQueryResponse)

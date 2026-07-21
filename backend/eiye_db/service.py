@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, pii, registry, semantic
+from eiye_db import audit, catalog, pii, registry, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -88,6 +88,142 @@ def detect_relationships(key_id: str) -> list[dict[str, Any]]:
         "detect_relationships", "semantic", "all", key_id, details={"new_candidates": len(created), "pruned": pruned}
     )
     return created
+
+
+async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id: str) -> dict[str, Any]:
+    """Execute an approved metric: template + validated params → governed query.
+
+    The underlying run_query applies the full chain (read-only connector, PII
+    redaction, audit); this adds a metric-level audit record so results are
+    traceable to the definition that produced them (lineage).
+    """
+    metric = catalog.get(metric_id)
+    if metric is None:
+        raise NotFoundError(f"metric not found: {metric_id}")
+    safe_params = pii.redact_structure(params)[0]
+    try:
+        request = catalog.build_request(metric, params)  # raises CatalogError if not approved / bad params
+        result = await run_query(metric["datasource_id"], request, limit, key_id)
+    except (catalog.CatalogError, ConnectorError, TimeoutError) as e:
+        # Failures are lineage too: a denied or broken execution must be traceable.
+        audit.record(
+            "query_metric",
+            "metric",
+            metric_id,
+            key_id,
+            metric["datasource_id"],
+            details={"name": metric["name"], "params": safe_params, "error": type(e).__name__},
+            success=False,
+        )
+        raise
+    audit.record(
+        "query_metric",
+        "metric",
+        metric_id,
+        key_id,
+        metric["datasource_id"],
+        details={"name": metric["name"], "params": safe_params, "rows": result.row_count},
+    )
+    return {
+        "metric": {"id": metric["id"], "name": metric["name"], "params": params},
+        "result": result.model_dump(mode="json"),
+    }
+
+
+# Outstanding unreviewed proposals are bounded so a runaway (or injected) agent
+# cannot flood the human review queue.
+PROPOSAL_QUEUE_CAP = 100
+
+
+def _proposal_queue_full() -> bool:
+    pending_rels = [r for r in semantic.list_relationships(status="candidate") if r["source"] == "proposed"]
+    pending_metrics = catalog.list_metrics(status="candidate")
+    return (len(pending_rels) + len(pending_metrics)) >= PROPOSAL_QUEUE_CAP
+
+
+def propose_relationship(
+    from_datasource_id: str,
+    from_table: str,
+    from_column: str,
+    to_datasource_id: str,
+    to_table: str,
+    to_column: str,
+    rationale: str,
+    key_id: str,
+) -> dict[str, Any]:
+    """An agent drafts a relationship. It lands as a candidate — never ground truth.
+
+    The proposal is audited under the proposer's identity; a human approves or
+    rejects it via the review endpoint (draft → approve → enforce).
+    """
+    for ds_id in (from_datasource_id, to_datasource_id):
+        if registry.get(ds_id) is None:
+            raise NotFoundError(f"datasource not found: {ds_id}")
+    if _proposal_queue_full():
+        audit.record("propose_relationship", "semantic", "queue-full", key_id, success=False)
+        raise catalog.CatalogError("proposal queue is full; a human must review pending candidates first")
+    # Rationale is agent-authored free text re-served to reviewers: cap + redact.
+    rationale = pii.redact_text(rationale[:500])[0]
+    # Annotate (don't block) endpoints missing from the discovered schema, so a
+    # reviewer can't mistake a fabricated column for a real one. Schemas can be
+    # stale, so this is a flag rather than a rejection.
+    for ds_id, table, column in (
+        (from_datasource_id, from_table, from_column),
+        (to_datasource_id, to_table, to_column),
+    ):
+        schema = registry.get_schema(ds_id)
+        tables = {t["name"]: {f["name"] for f in t.get("fields") or []} for t in (schema or {}).get("tables", [])}
+        if schema and (table not in tables or column not in tables[table]):
+            rationale += f" [note: {table}.{column} not found in the discovered schema]"
+    created = semantic.upsert(
+        [
+            {
+                "from_datasource_id": from_datasource_id,
+                "from_table": from_table,
+                "from_column": from_column,
+                "to_datasource_id": to_datasource_id,
+                "to_table": to_table,
+                "to_column": to_column,
+                "kind": "candidate_join",
+                "source": "proposed",
+                "confidence": 0.5,
+                "rationale": rationale,
+            }
+        ]
+    )
+    outcome = created[0] if created else {"already_known": True}
+    audit.record(
+        "propose_relationship",
+        "semantic",
+        created[0]["id"] if created else "existing",
+        key_id,
+        details={"from": f"{from_table}.{from_column}", "to": f"{to_table}.{to_column}", "new": bool(created)},
+    )
+    return outcome
+
+
+def propose_metric(
+    name: str,
+    description: str,
+    datasource_id: str,
+    request_template: dict[str, Any],
+    params: dict[str, Any],
+    key_id: str,
+) -> dict[str, Any]:
+    """An agent drafts a metric definition. Lands as a candidate; cannot execute
+    until a human approves it."""
+    if registry.get(datasource_id) is None:
+        raise NotFoundError(f"datasource not found: {datasource_id}")
+    if _proposal_queue_full():
+        audit.record("propose_metric", "metric", "queue-full", key_id, success=False)
+        raise catalog.CatalogError("proposal queue is full; a human must review pending candidates first")
+    try:
+        metric = catalog.create(name, description, datasource_id, request_template, params, source="proposed")
+    except catalog.CatalogError:
+        audit.record("propose_metric", "metric", "invalid", key_id, datasource_id, details={"name": name}, success=False)
+        raise
+    audit.record("propose_metric", "metric", metric["id"], key_id, datasource_id, details={"name": name})
+    return metric
 
 
 def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:

@@ -81,12 +81,13 @@ def delete(datasource_id: str) -> bool:
         row = s.get(db.DataSourceRow, datasource_id)
         if row is None:
             return False
-        # Relationships touching this datasource (either side) die with it —
-        # a stale approved link to a deleted source would mislead agents.
+        # Relationships and metrics touching this datasource die with it —
+        # stale approved semantics over a deleted source would mislead agents.
         s.query(db.RelationshipRow).filter(
             (db.RelationshipRow.from_datasource_id == datasource_id)
             | (db.RelationshipRow.to_datasource_id == datasource_id)
         ).delete()
+        s.query(db.MetricRow).filter(db.MetricRow.datasource_id == datasource_id).delete()
         s.delete(row)
         s.commit()
         return True
