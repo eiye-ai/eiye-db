@@ -145,6 +145,12 @@ class DataSourceUpdate(BaseModel):
     tags: list[str] | None = None
 
 
+class RelationshipUpdate(BaseModel):
+    """Human review of a candidate relationship (the 'human governs' step)."""
+
+    status: Literal["approved", "rejected"]
+
+
 class SourceQueryRequest(BaseModel):
     """A source-scoped query. `request` is connector-specific:
     postgres: {"sql": "SELECT ..."} · filesystem: {"path": "rel/file.csv"} ·

@@ -24,10 +24,26 @@ export interface SchemaTable {
   fields: SchemaField[];
 }
 
+export interface Relationship {
+  id: string;
+  from_datasource_id: string;
+  from_table: string;
+  from_column: string;
+  to_datasource_id: string;
+  to_table: string;
+  to_column: string;
+  kind: "foreign_key" | "candidate_join";
+  source: "structural" | "heuristic" | "proposed";
+  status: "approved" | "candidate" | "rejected";
+  confidence: number;
+  rationale: string;
+}
+
 export interface Schema {
   datasource_id: string;
   tables: SchemaTable[];
   discovered_at: string;
+  relationships?: Relationship[];
 }
 
 export interface QueryResponse {

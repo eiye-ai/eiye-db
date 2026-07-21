@@ -24,5 +24,13 @@ class Connector(ABC):
     async def query(self, request: dict[str, Any], limit: int) -> list[dict[str, Any]]:
         """Execute a read-only, connector-specific request; return rows."""
 
+    async def discover_relationships(self) -> list[dict[str, Any]]:
+        """Structural links the source itself declares (e.g. SQL foreign keys).
+
+        Shape: [{"from_table", "from_column", "to_table", "to_column"}].
+        Sources without declared relationships return [].
+        """
+        return []
+
     async def close(self) -> None:
         pass

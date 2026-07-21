@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, pii, registry
+from eiye_db import audit, pii, registry, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -50,6 +50,7 @@ async def discover_schema(datasource_id: str, key_id: str) -> dict[str, Any]:
     connector = get_connector(ds.type, ds.config)
     try:
         tables = await connector.discover_schema()
+        fks = await connector.discover_relationships()
     except ConnectorError:
         audit.record("discover_schema", "datasource", ds.id, key_id, ds.id, success=False)
         raise
@@ -61,8 +62,43 @@ async def discover_schema(datasource_id: str, key_id: str) -> dict[str, Any]:
         "discovered_at": datetime.now(timezone.utc).isoformat(),
     }
     registry.set_schema(ds.id, schema)
-    audit.record("discover_schema", "datasource", ds.id, key_id, ds.id, details={"tables": len(tables)})
+    # Structural FKs are the source's own metadata: auto-approved ground truth.
+    semantic.sync_structural(ds.id, fks)
+    audit.record(
+        "discover_schema", "datasource", ds.id, key_id, ds.id, details={"tables": len(tables), "foreign_keys": len(fks)}
+    )
     return schema
+
+
+def detect_relationships(key_id: str) -> list[dict[str, Any]]:
+    """Heuristic candidate-join detection across all discovered schemas.
+
+    Candidates are never authoritative — they stay status="candidate" until a
+    human approves them. Existing rows (and their approve/reject decisions)
+    are preserved.
+    """
+    schemas = []
+    for ds in registry.list_all():
+        schema = registry.get_schema(ds.id)
+        if schema and schema.get("tables"):
+            schemas.append((ds.id, ds.name, schema["tables"]))
+    pruned = semantic.prune_stale_candidates(schemas)
+    created = semantic.upsert(semantic.detect_candidates(schemas))
+    audit.record(
+        "detect_relationships", "semantic", "all", key_id, details={"new_candidates": len(created), "pruned": pruned}
+    )
+    return created
+
+
+def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:
+    """Relationships to attach to a schema response: approved first, then candidates.
+
+    Rejected links are excluded — an agent should never see them. Candidates are
+    included but explicitly labeled so a client can distinguish ground truth
+    from unreviewed proposals.
+    """
+    rels = semantic.list_relationships(datasource_id=datasource_id)
+    return [r for r in rels if r["status"] == "approved"] + [r for r in rels if r["status"] == "candidate"]
 
 
 async def run_query(

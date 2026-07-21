@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, String, Text, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from eiye_db.config import settings
@@ -29,6 +29,39 @@ class DataSourceRow(Base):
     last_connected: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     schema_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class RelationshipRow(Base):
+    """A semantic link between two columns (same or different datasources).
+
+    Trust model: source="structural" rows (real DB foreign keys) are created
+    approved; heuristic/proposed rows start as candidates and only a human
+    approval makes them authoritative to agents.
+    """
+
+    __tablename__ = "relationships"
+    # Directed uniqueness at the DB level; undirected dedup is enforced in
+    # semantic.upsert (a DB constraint can't express symmetric uniqueness).
+    __table_args__ = (
+        UniqueConstraint(
+            "from_datasource_id", "from_table", "from_column", "to_datasource_id", "to_table", "to_column"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    from_datasource_id: Mapped[str] = mapped_column(String(36))
+    from_table: Mapped[str] = mapped_column(String(255))
+    from_column: Mapped[str] = mapped_column(String(255))
+    to_datasource_id: Mapped[str] = mapped_column(String(36))
+    to_table: Mapped[str] = mapped_column(String(255))
+    to_column: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(30))  # foreign_key | candidate_join
+    source: Mapped[str] = mapped_column(String(20))  # structural | heuristic | proposed
+    status: Mapped[str] = mapped_column(String(20))  # approved | candidate | rejected
+    confidence: Mapped[float] = mapped_column(default=1.0)
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
 class AuditRow(Base):

@@ -39,12 +39,15 @@ def list_datasources() -> list[dict[str, Any]]:
 
 @mcp.tool()
 async def get_schema(datasource_id: str) -> dict[str, Any]:
-    """Get the schema of a datasource: its tables/files and their fields.
+    """Get the schema of a datasource: its tables/files, their fields, and known
+    relationships (joins). Relationships with status "approved" are governed
+    ground truth (e.g. real foreign keys); status "candidate" means a detected
+    but unreviewed guess — treat candidates as hints, not facts.
     Runs live discovery if no schema has been cached yet."""
     schema = registry.get_schema(datasource_id)
     if schema is None:
         schema = await service.discover_schema(datasource_id, MCP_KEY_ID)
-    return schema
+    return {**schema, "relationships": service.relationships_for_schema(datasource_id)}
 
 
 @mcp.tool()

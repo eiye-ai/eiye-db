@@ -1,10 +1,18 @@
 """REST API routes."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 
-from eiye_db import audit, metrics, registry, service
+from eiye_db import audit, metrics, registry, semantic, service
 from eiye_db.connectors import ConnectorError
-from eiye_db.models import DataSource, DataSourceCreate, DataSourceUpdate, SourceQueryRequest, SourceQueryResponse
+from eiye_db.models import (
+    DataSource,
+    DataSourceCreate,
+    DataSourceUpdate,
+    RelationshipUpdate,
+    SourceQueryRequest,
+    SourceQueryResponse,
+)
 from eiye_db.security import Identity, require_api_key
 
 router = APIRouter(prefix="/api/v1")
@@ -94,7 +102,59 @@ def surface_schema(datasource_id: str, identity: Identity = Depends(require_api_
     schema = registry.get_schema(datasource_id)
     if schema is None:
         raise HTTPException(404, "no schema discovered yet; POST /datasources/{id}/discover first")
-    return schema
+    return {**schema, "relationships": service.relationships_for_schema(datasource_id)}
+
+
+@router.post("/semantic/detect")
+def semantic_detect(identity: Identity = Depends(require_api_key)):
+    """Run heuristic candidate-join detection across all discovered schemas."""
+    return service.detect_relationships(identity.key_id)
+
+
+@router.get("/semantic/relationships")
+def semantic_relationships(
+    status: str | None = None,
+    datasource_id: str | None = None,
+    identity: Identity = Depends(require_api_key),
+):
+    return semantic.list_relationships(status=status, datasource_id=datasource_id)
+
+
+@router.put("/semantic/relationships/{relationship_id}")
+def semantic_review(
+    relationship_id: str,
+    req: RelationshipUpdate,
+    identity: Identity = Depends(require_api_key),
+):
+    # The human-approval gate is what makes candidates trustworthy, so it is a
+    # technical boundary, not a procedural one: admin key required (agents may
+    # legitimately hold the primary key).
+    if not identity.is_admin:
+        raise HTTPException(403, "relationship review requires the admin API key")
+    rel, previous = semantic.set_status(relationship_id, req.status)
+    if rel is None:
+        if previous == "structural":
+            raise HTTPException(409, "structural relationships come from the source database and cannot be reviewed")
+        raise HTTPException(404, "relationship not found")
+    audit.record(
+        "review_relationship",
+        "semantic",
+        relationship_id,
+        identity.key_id,
+        details={
+            "old_status": previous,
+            "new_status": req.status,
+            "from": f"{rel['from_datasource_id']}/{rel['from_table']}.{rel['from_column']}",
+            "to": f"{rel['to_datasource_id']}/{rel['to_table']}.{rel['to_column']}",
+        },
+    )
+    return rel
+
+
+@router.get("/semantic/export", response_class=PlainTextResponse)
+def semantic_export(identity: Identity = Depends(require_api_key)):
+    """The approved semantic model as YAML (semantic-layer-as-code)."""
+    return semantic.export_yaml()
 
 
 @router.post("/query", response_model=SourceQueryResponse)

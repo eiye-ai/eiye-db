@@ -128,6 +128,13 @@ Or in Claude Desktop's `claude_desktop_config.json`:
 The agent gets three tools — `list_datasources`, `get_schema`,
 `query_datasource` — all read-only, PII-redacted, and audited.
 
+`get_schema` also returns **relationships** (joins): `"approved"` ones are
+governed ground truth (e.g. real foreign keys); `"candidate"` ones are detected
+guesses awaiting human review (`POST /api/v1/semantic/detect` to detect,
+`PUT /api/v1/semantic/relationships/{id}` with the admin key to approve/reject).
+Datasources discovered before this feature show none until re-discovered
+(`POST /api/v1/datasources/{id}/discover`).
+
 **Note:** the API and the MCP server share the registry via
 `EIYE_DATABASE_URL` (default `sqlite:///./eiye.db`, relative to the working
 directory). Since MCP hosts spawn the server from an arbitrary cwd, set an

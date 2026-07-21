@@ -6,7 +6,7 @@ import os
 import pytest
 
 from eiye_db.connectors.base import ConnectorError
-from eiye_db.connectors.postgres import PostgresConnector, rows_to_tables
+from eiye_db.connectors.postgres import PostgresConnector, fk_rows_to_relationships, rows_to_tables
 
 PG_DSN = os.environ.get("EIYE_TEST_PG_DSN")
 
@@ -16,15 +16,29 @@ def test_rows_to_tables():
         ("users", "id", "integer"),
         ("users", "email", "text"),
         ("orders", "id", "integer"),
+        ("orders", "user_id", "integer"),
     ]
     pks = {("users", "id"), ("orders", "id")}
-    tables = rows_to_tables(columns, pks)
+    fk_cols = {("orders", "user_id")}
+    tables = rows_to_tables(columns, pks, fk_cols)
     by_name = {t["name"]: t for t in tables}
     assert by_name["users"]["fields"] == [
-        {"name": "id", "type": "integer", "is_primary_key": True},
-        {"name": "email", "type": "text", "is_primary_key": False},
+        {"name": "id", "type": "integer", "is_primary_key": True, "is_foreign_key": False},
+        {"name": "email", "type": "text", "is_primary_key": False, "is_foreign_key": False},
     ]
-    assert len(by_name["orders"]["fields"]) == 1
+    assert by_name["orders"]["fields"][1] == {
+        "name": "user_id",
+        "type": "integer",
+        "is_primary_key": False,
+        "is_foreign_key": True,
+    }
+
+
+def test_fk_rows_to_relationships():
+    rows = [("orders", "user_id", "users", "id")]
+    assert fk_rows_to_relationships(rows) == [
+        {"from_table": "orders", "from_column": "user_id", "to_table": "users", "to_column": "id"}
+    ]
 
 
 def test_missing_dsn():
