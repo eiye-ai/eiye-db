@@ -228,13 +228,16 @@ def build_request(metric: dict[str, Any], params: dict[str, Any]) -> dict[str, A
     return substitute(metric["request_template"], metric["params"], params)
 
 
-def export_yaml_lines() -> list[str]:
-    """Approved metrics for the semantic-model YAML export."""
+def export_yaml_lines(datasource_ids: set[str] | None = None) -> list[str]:
+    """Approved metrics for the semantic-model YAML export. `datasource_ids`
+    is a visibility filter (policy-scoped export)."""
     import json
 
     q = json.dumps
     lines = ["metrics:"]
     approved = list_metrics(status="approved")
+    if datasource_ids is not None:
+        approved = [m for m in approved if m["datasource_id"] in datasource_ids]
     if not approved:
         lines.append("  []")
     for m in approved:

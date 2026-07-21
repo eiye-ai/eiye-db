@@ -87,6 +87,25 @@ class MetricRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class PolicyRow(Base):
+    """An ABAC policy: who (subjects) may do what (actions) to which
+    datasource (resource_id, or '*'), with optional column masking."""
+
+    __tablename__ = "policies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    effect: Mapped[str] = mapped_column(String(10))  # allow | deny
+    resource_type: Mapped[str] = mapped_column(String(50), default="datasource")
+    resource_id: Mapped[str] = mapped_column(String(255))  # datasource id | "*"
+    actions: Mapped[list] = mapped_column(JSON)  # subset of {"read", "discover"}
+    subjects: Mapped[list] = mapped_column(JSON)  # key ids | ["*"]
+    conditions: Mapped[dict] = mapped_column(JSON, default=dict)  # {"columns": [...]} on deny
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class AuditRow(Base):
     __tablename__ = "audit_logs"
 

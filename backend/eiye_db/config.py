@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     api_key: str | None = None
     admin_api_key: str | None = None
 
+    # ABAC posture: False (default) = access allowed unless a policy denies it,
+    # so a fresh install works with zero policies. True = every non-admin access
+    # needs an explicit allow policy (hardened deployments).
+    abac_default_deny: bool = False
+
     # Browser access (CORS). Comma-separated origins; defaults cover the Vite dev server.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 

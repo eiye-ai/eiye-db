@@ -1,0 +1,408 @@
+"""ABAC: policy validation, evaluation order, enforcement on every access path."""
+
+import asyncio
+
+import pytest
+
+from eiye_db import policy
+
+ADMIN = {"X-API-Key": "root-secret"}
+PRIMARY = {"X-API-Key": "secret"}
+
+
+@pytest.fixture
+def keys(monkeypatch):
+    """Leave open dev mode: 'primary' is non-admin, 'admin' is admin."""
+    from eiye_db.config import settings
+
+    monkeypatch.setattr(settings, "api_key", "secret")
+    monkeypatch.setattr(settings, "admin_api_key", "root-secret")
+
+
+def _register_demo(client, tmp_path, name="demo"):
+    d = tmp_path / name
+    d.mkdir()
+    (d / "customers.csv").write_text("id,name,email,ssn\n1,Alice,alice@example.com,123-45-6789\n")
+    (d / "orders.csv").write_text("order_id,customer_id,amount\n10,1,99.5\n")
+    ds = client.post(
+        "/api/v1/datasources",
+        json={"name": name, "type": "filesystem", "config": {"root": str(d)}},
+        headers=ADMIN,
+    ).json()
+    client.post(f"/api/v1/datasources/{ds['id']}/discover", headers=ADMIN)
+    return ds
+
+
+# --- validation ---
+
+
+def test_policy_validation():
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "maybe", "*", ["read"], ["*"])  # bad effect
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "deny", "*", ["write"], ["*"])  # unknown action
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "deny", "*", [], ["*"])  # empty actions
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "deny", "*", ["read"], [])  # empty subjects
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "deny", "*", ["read"], ["*"], {"rows": []})  # unknown condition
+    with pytest.raises(policy.PolicyError):
+        policy.create("p", "", "allow", "*", ["read"], ["*"], {"columns": ["a"]})  # mask needs deny
+    with pytest.raises(policy.PolicyError):
+        # mask on discover would silently no-op (and silently NOT deny): refused
+        policy.create("p", "", "deny", "*", ["read", "discover"], ["*"], {"columns": ["a"]})
+
+
+def test_policy_unique_name():
+    policy.create("dup", "", "deny", "*", ["read"], ["nobody"])
+    with pytest.raises(policy.PolicyError):
+        policy.create("dup", "", "deny", "*", ["read"], ["nobody"])
+
+
+# --- evaluation ---
+
+
+def test_check_deny_and_subject_scoping():
+    policy.create("block-agent", "", "deny", "ds1", ["read"], ["mcp-stdio"])
+    with pytest.raises(policy.PolicyDenied):
+        policy.check("mcp-stdio", False, "read", "ds1")
+    # other subjects, other datasources, other actions: unaffected
+    assert policy.check("primary", False, "read", "ds1") == set()
+    assert policy.check("mcp-stdio", False, "read", "ds2") == set()
+    assert policy.check("mcp-stdio", False, "discover", "ds1") == set()
+    # admin bypasses
+    assert policy.check("admin", True, "read", "ds1") == set()
+
+
+def test_check_column_mask_accumulates():
+    policy.create("mask-a", "", "deny", "*", ["read"], ["*"], {"columns": ["ssn"]})
+    policy.create("mask-b", "", "deny", "ds1", ["read"], ["*"], {"columns": ["salary"]})
+    assert policy.check("primary", False, "read", "ds1") == {"ssn", "salary"}
+    assert policy.check("primary", False, "read", "ds2") == {"ssn"}
+
+
+def test_check_deny_wins_over_allow():
+    policy.create("allow-all", "", "allow", "*", ["read"], ["*"])
+    policy.create("deny-ds1", "", "deny", "ds1", ["read"], ["*"])
+    with pytest.raises(policy.PolicyDenied):
+        policy.check("primary", False, "read", "ds1")
+
+
+def test_default_deny_flag(monkeypatch):
+    from eiye_db.config import settings
+
+    monkeypatch.setattr(settings, "abac_default_deny", True)
+    with pytest.raises(policy.PolicyDenied):
+        policy.check("primary", False, "read", "ds1")
+    assert policy.check("admin", True, "read", "ds1") == set()  # admin unaffected
+    policy.create("allow-primary", "", "allow", "*", ["read"], ["primary"])
+    assert policy.check("primary", False, "read", "ds1") == set()
+    with pytest.raises(policy.PolicyDenied):
+        policy.check("primary", False, "discover", "ds1")  # allow is per-action
+
+
+# --- API management ---
+
+
+def test_policy_crud_admin_gated(client, keys):
+    body = {"name": "p1", "effect": "deny", "resource_id": "*", "actions": ["read"], "subjects": ["nobody"]}
+    assert client.post("/api/v1/policies", json=body, headers=PRIMARY).status_code == 403
+    assert client.get("/api/v1/policies", headers=PRIMARY).status_code == 403
+    created = client.post("/api/v1/policies", json=body, headers=ADMIN)
+    assert created.status_code == 201
+    pid = created.json()["id"]
+    assert client.delete(f"/api/v1/policies/{pid}", headers=PRIMARY).status_code == 403
+    listed = client.get("/api/v1/policies", headers=ADMIN).json()
+    assert [p["name"] for p in listed] == ["p1"]
+    assert client.delete(f"/api/v1/policies/{pid}", headers=ADMIN).status_code == 204
+    assert client.get("/api/v1/policies", headers=ADMIN).json() == []
+
+
+def test_policy_create_invalid_400(client, keys):
+    body = {"name": "bad", "effect": "deny", "resource_id": "*", "actions": ["read"], "subjects": ["*"], "conditions": {"rows": 1}}
+    assert client.post("/api/v1/policies", json=body, headers=ADMIN).status_code == 400
+
+
+# --- enforcement: every access path ---
+
+
+def test_query_denied_403_and_audited(client, keys, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    policy.create("block", "", "deny", ds["id"], ["read"], ["primary"])
+    res = client.post(
+        "/api/v1/query",
+        json={"datasource_id": ds["id"], "request": {"path": "customers.csv"}},
+        headers=PRIMARY,
+    )
+    # the caller gets a generic message — policy names reveal what's protected
+    assert res.status_code == 403 and res.json()["detail"] == "access denied by policy"
+    denials = [a for a in audit.recent(10) if a["action"] == "policy_deny"]
+    assert denials and denials[0]["success"] is False and denials[0]["api_key_id"] == "primary"
+    # ...while the audit trail keeps the specific policy for the admins
+    assert "block" in denials[0]["details"]["reason"]
+    # admin still passes
+    assert (
+        client.post(
+            "/api/v1/query",
+            json={"datasource_id": ds["id"], "request": {"path": "customers.csv"}},
+            headers=ADMIN,
+        ).status_code
+        == 200
+    )
+
+
+def test_column_mask_end_to_end(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    policy.create("mask", "", "deny", "*", ["read"], ["*"], {"columns": ["ssn", "email"]})
+    res = client.post(
+        "/api/v1/query",
+        json={"datasource_id": ds["id"], "request": {"path": "customers.csv"}},
+        headers=PRIMARY,
+    ).json()
+    assert res["rows"] and all("ssn" not in row and "email" not in row for row in res["rows"])
+    assert res["rows"][0]["id"] == "1"  # unmasked columns intact
+    # masking disclosed in lineage; masked columns never reached PII redaction
+    assert res["lineage"]["policy"]["masked_columns"] == ["email", "ssn"]
+    assert res["pii_counts"] == {}
+
+
+def test_discover_and_schema_denied(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    policy.create("no-schema", "", "deny", ds["id"], ["discover"], ["primary"])
+    assert client.post(f"/api/v1/datasources/{ds['id']}/discover", headers=PRIMARY).status_code == 403
+    assert client.get(f"/api/v1/surface/schema/{ds['id']}", headers=PRIMARY).status_code == 403
+    assert client.get(f"/api/v1/surface/schema/{ds['id']}", headers=ADMIN).status_code == 200
+
+
+def test_metric_inherits_datasource_policy(client, keys, tmp_path):
+    from eiye_db import catalog
+
+    ds = _register_demo(client, tmp_path)
+    m = catalog.create("sample", "", ds["id"], {"path": "customers.csv"}, {}, source="human")
+    policy.create("block", "", "deny", ds["id"], ["read"], ["primary"])
+    res = client.post(f"/api/v1/semantic/metrics/{m['id']}/query", json={}, headers=PRIMARY)
+    assert res.status_code == 403
+    assert client.post(f"/api/v1/semantic/metrics/{m['id']}/query", json={}, headers=ADMIN).status_code == 200
+
+
+def test_resolve_inherits_datasource_policy(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    policy.create("block", "", "deny", ds["id"], ["read"], ["primary"])
+    side = {"datasource_id": ds["id"], "request": {"path": "customers.csv"}, "column": "name"}
+    res = client.post("/api/v1/semantic/resolve", json={"left": side, "right": side}, headers=PRIMARY)
+    assert res.status_code == 403
+
+
+def test_mcp_denied_by_policy(client, keys, tmp_path):
+    from eiye_db import mcp_server
+
+    ds = _register_demo(client, tmp_path)
+    policy.create("no-agents", "", "deny", ds["id"], ["read", "discover"], ["mcp-stdio"])
+    with pytest.raises(policy.PolicyDenied):
+        asyncio.run(mcp_server.get_schema(ds["id"]))
+    with pytest.raises(policy.PolicyDenied):
+        asyncio.run(mcp_server.query_datasource(ds["id"], {"path": "customers.csv"}))
+
+
+def test_default_deny_end_to_end(client, keys, tmp_path, monkeypatch):
+    from eiye_db.config import settings
+
+    ds = _register_demo(client, tmp_path)
+    monkeypatch.setattr(settings, "abac_default_deny", True)
+    body = {"datasource_id": ds["id"], "request": {"path": "customers.csv"}}
+    assert client.post("/api/v1/query", json=body, headers=PRIMARY).status_code == 403
+    assert client.post("/api/v1/query", json=body, headers=ADMIN).status_code == 200
+    policy.create("allow-primary", "", "allow", "*", ["read"], ["primary"])
+    assert client.post("/api/v1/query", json=body, headers=PRIMARY).status_code == 200
+
+
+# --- side channels: metadata surfaces respect the discover gate ---
+
+
+def _deny_discover(ds_id, subject="primary"):
+    policy.create(f"hide-{ds_id[:8]}", "", "deny", ds_id, ["read", "discover"], [subject])
+
+
+def test_relationships_listing_filtered(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    client.post("/api/v1/semantic/detect", headers=ADMIN)
+    assert client.get("/api/v1/semantic/relationships", headers=PRIMARY).json() != []
+    _deny_discover(ds["id"])
+    # denied source's table/column names no longer leak through the listing
+    assert client.get("/api/v1/semantic/relationships", headers=PRIMARY).json() == []
+    assert client.get("/api/v1/semantic/relationships", headers=ADMIN).json() != []
+
+
+def test_rejected_relationships_hidden_from_non_admin(client, keys, tmp_path):
+    _register_demo(client, tmp_path)
+    created = client.post("/api/v1/semantic/detect", headers=ADMIN).json()
+    client.put(
+        f"/api/v1/semantic/relationships/{created[0]['id']}", json={"status": "rejected"}, headers=ADMIN
+    )
+    assert all(r["status"] != "rejected" for r in client.get("/api/v1/semantic/relationships", headers=PRIMARY).json())
+    assert any(r["status"] == "rejected" for r in client.get("/api/v1/semantic/relationships", headers=ADMIN).json())
+
+
+def test_export_filtered(client, keys, tmp_path):
+    from eiye_db import catalog
+
+    ds = _register_demo(client, tmp_path)
+    catalog.create("secret-metric", "", ds["id"], {"path": "customers.csv"}, {}, source="human")
+    assert "secret-metric" in client.get("/api/v1/semantic/export", headers=PRIMARY).text
+    _deny_discover(ds["id"])
+    exported = client.get("/api/v1/semantic/export", headers=PRIMARY).text
+    assert "secret-metric" not in exported and "customers" not in exported
+    assert "secret-metric" in client.get("/api/v1/semantic/export", headers=ADMIN).text
+
+
+def test_detect_requires_admin(client, keys):
+    assert client.post("/api/v1/semantic/detect", headers=PRIMARY).status_code == 403
+
+
+def test_metric_listing_filtered(client, keys, tmp_path):
+    from eiye_db import catalog
+
+    ds = _register_demo(client, tmp_path)
+    catalog.create("m1", "", ds["id"], {"path": "customers.csv"}, {}, source="human")
+    _deny_discover(ds["id"])
+    assert client.get("/api/v1/semantic/metrics", headers=PRIMARY).json() == []
+    assert client.get("/api/v1/semantic/metrics", headers=ADMIN).json() != []
+
+
+def test_surface_sources_filtered(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    _deny_discover(ds["id"])
+    assert client.get("/api/v1/surface/sources", headers=PRIMARY).json() == []
+    assert client.get("/api/v1/surface/sources", headers=ADMIN).json() != []
+
+
+def test_mcp_listings_filtered(client, keys, tmp_path):
+    from eiye_db import catalog, mcp_server
+
+    ds = _register_demo(client, tmp_path)
+    catalog.create("m1", "", ds["id"], {"path": "customers.csv"}, {}, source="human")
+    assert mcp_server.list_datasources() != []
+    _deny_discover(ds["id"], subject="mcp-stdio")
+    assert mcp_server.list_datasources() == []
+    assert mcp_server.list_metrics() == []
+
+
+def test_propose_is_not_an_existence_oracle(client, keys, tmp_path):
+    from eiye_db import service
+
+    ds = _register_demo(client, tmp_path)
+    _deny_discover(ds["id"], subject="mcp-stdio")
+    # a denied source answers exactly like a missing one
+    for target in (ds["id"], "no-such-ds"):
+        with pytest.raises(service.NotFoundError) as e:
+            service.propose_relationship(target, "t", "c", target, "t2", "c2", "why", "mcp-stdio")
+        assert str(e.value) == f"datasource not found: {target}"
+        with pytest.raises(service.NotFoundError):
+            service.propose_metric("m", "", target, {"path": "x"}, {}, "mcp-stdio")
+
+
+# --- masking hardening ---
+
+
+def test_mask_is_case_insensitive(client, keys, tmp_path):
+    d = tmp_path / "up"
+    d.mkdir()
+    (d / "people.csv").write_text("ID,Name,SSN\n1,Alice,123-45-6789\n")
+    ds = client.post(
+        "/api/v1/datasources",
+        json={"name": "up", "type": "filesystem", "config": {"root": str(d)}},
+        headers=ADMIN,
+    ).json()
+    policy.create("mask", "", "deny", "*", ["read"], ["*"], {"columns": ["ssn"]})
+    res = client.post(
+        "/api/v1/query", json={"datasource_id": ds["id"], "request": {"path": "people.csv"}}, headers=PRIMARY
+    ).json()
+    assert res["rows"] and all("SSN" not in row and "ssn" not in row for row in res["rows"])
+
+
+def test_strip_masked_is_recursive():
+    from eiye_db.service import _strip_masked
+
+    rows = [{"id": 1, "detail": {"SSN": "x", "ok": [{"ssn": "y", "keep": 1}]}}]
+    assert _strip_masked(rows, {"ssn"}) == [{"id": 1, "detail": {"ok": [{"keep": 1}]}}]
+
+
+def test_sql_referencing_masked_column_denied():
+    from eiye_db.service import _sql_references_masked
+
+    # aliasing can't hide the source identifier
+    assert _sql_references_masked("SELECT ssn AS x FROM people", {"ssn"}) == "ssn"
+    assert _sql_references_masked('SELECT "SSN" FROM people', {"ssn"}) == "ssn"
+    assert _sql_references_masked("SELECT p.ssn FROM people p", {"ssn"}) == "ssn"
+    # no false hit on substrings of longer identifiers
+    assert _sql_references_masked("SELECT ssn_hash FROM people", {"ssn"}) is None
+    assert _sql_references_masked("SELECT name FROM people", {"ssn"}) is None
+
+
+# --- policy store integrity ---
+
+
+def test_policy_resource_must_exist(client, keys, tmp_path):
+    body = {"name": "ghost", "effect": "deny", "resource_id": "no-such-ds", "actions": ["read"], "subjects": ["*"]}
+    assert client.post("/api/v1/policies", json=body, headers=ADMIN).status_code == 400
+    ds = _register_demo(client, tmp_path)
+    body["resource_id"] = ds["id"]
+    assert client.post("/api/v1/policies", json=body, headers=ADMIN).status_code == 201
+
+
+def test_datasource_delete_cascades_policies(client, keys, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    policy.create("scoped", "", "deny", ds["id"], ["read"], ["nobody"])
+    policy.create("global", "", "deny", "*", ["read"], ["nobody"])
+    client.delete(f"/api/v1/datasources/{ds['id']}", headers=ADMIN)
+    assert [p["name"] for p in policy.list_policies()] == ["global"]
+
+
+def test_policy_audit_carries_full_definition(client, keys):
+    from eiye_db import audit
+
+    body = {
+        "name": "traceable", "effect": "deny", "resource_id": "*",
+        "actions": ["read"], "subjects": ["primary"], "conditions": {"columns": ["ssn"]},
+    }
+    pid = client.post("/api/v1/policies", json=body, headers=ADMIN).json()["id"]
+    client.delete(f"/api/v1/policies/{pid}", headers=ADMIN)
+    by_action = {a["action"]: a for a in audit.recent(10)}
+    for action in ("create_policy", "delete_policy"):
+        d = by_action[action]["details"]
+        assert d["subjects"] == ["primary"] and d["actions"] == ["read"]
+        assert d["conditions"] == {"columns": ["ssn"]} and d["effect"] == "deny"
+
+
+def test_schema_reads_audited(client, keys, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    client.get(f"/api/v1/surface/schema/{ds['id']}", headers=PRIMARY)
+    reads = [a for a in audit.recent(10) if a["action"] == "read_schema"]
+    assert reads and reads[0]["api_key_id"] == "primary" and reads[0]["datasource_id"] == ds["id"]
+
+
+def test_example_policies_are_valid():
+    """The shipped examples must always load (with placeholder substitution)."""
+    import json
+    from pathlib import Path
+
+    examples = json.loads(
+        (Path(__file__).resolve().parents[2] / "examples" / "policies" / "example_policies.json").read_text()
+    )
+    assert len(examples) >= 4
+    for p in examples:
+        created = policy.create(
+            p["name"],
+            p["description"],
+            p["effect"],
+            p["resource_id"].replace("REPLACE-WITH-DATASOURCE-ID", "some-ds"),
+            p["actions"],
+            p["subjects"],
+            p.get("conditions", {}),
+        )
+        assert created["id"]

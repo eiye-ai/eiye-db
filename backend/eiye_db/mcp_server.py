@@ -22,8 +22,9 @@ mcp = FastMCP("eiye_db")
 
 @mcp.tool()
 def list_datasources() -> list[dict[str, Any]]:
-    """List all registered datasources: id, name, type, status, description,
-    and whether a schema has been discovered."""
+    """List the registered datasources this agent may see: id, name, type,
+    status, description, and whether a schema has been discovered."""
+    visible = service.visible_datasource_ids(MCP_KEY_ID)
     return [
         {
             "id": ds.id,
@@ -34,6 +35,7 @@ def list_datasources() -> list[dict[str, Any]]:
             "schema_discovered": registry.get_schema(ds.id) is not None,
         }
         for ds in registry.list_all()
+        if ds.id in visible
     ]
 
 
@@ -44,6 +46,7 @@ async def get_schema(datasource_id: str) -> dict[str, Any]:
     ground truth (e.g. real foreign keys); status "candidate" means a detected
     but unreviewed guess — treat candidates as hints, not facts.
     Runs live discovery if no schema has been cached yet."""
+    service.check_schema_access(datasource_id, MCP_KEY_ID)
     schema = registry.get_schema(datasource_id)
     if schema is None:
         schema = await service.discover_schema(datasource_id, MCP_KEY_ID)
@@ -67,11 +70,14 @@ async def query_datasource(
 
 @mcp.tool()
 def list_metrics() -> list[dict[str, Any]]:
-    """List governed metrics (named, parameterized query templates). Only metrics
-    with status "approved" can be executed; "candidate" ones await human review."""
+    """List governed metrics (named, parameterized query templates) over the
+    datasources this agent may see. Only metrics with status "approved" can be
+    executed; "candidate" ones await human review."""
+    visible = service.visible_datasource_ids(MCP_KEY_ID)
     return [
         {k: m[k] for k in ("id", "name", "description", "datasource_id", "params", "status")}
         for m in catalog.list_metrics()
+        if m["datasource_id"] in visible
     ]
 
 

@@ -96,18 +96,20 @@ class PIIResult(BaseModel):
     detected_at: datetime = Field(default_factory=_utcnow)
 
 
-class AccessPolicy(BaseModel):
-    """Access control policy (ABAC)."""
+class PolicyCreate(BaseModel):
+    """An ABAC policy. `subjects` are API key ids matched exactly, case-
+    sensitive ("primary", "mcp-stdio", or ["*"]); a typo silently never
+    matches. `resource_id` is a datasource id or "*". A deny policy with
+    conditions={"columns": [...]} (actions must be ["read"]) masks those
+    columns from query results instead of blocking the source."""
 
-    id: str | None = None
     name: str
     description: str = ""
-    resource_type: str
-    resource_id: str
-    actions: list[Literal["read", "write", "delete", "admin"]] = Field(default_factory=list)
-    attributes: dict[str, Any] = Field(default_factory=dict)
+    effect: Literal["allow", "deny"]
+    resource_id: str = "*"
+    actions: list[Literal["read", "discover"]] = Field(default_factory=lambda: ["read"])
+    subjects: list[str] = Field(default_factory=lambda: ["*"])
     conditions: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class AuditLog(BaseModel):

@@ -487,15 +487,22 @@ def set_status(relationship_id: str, status: str) -> tuple[dict[str, Any] | None
         return _to_dict(row), previous
 
 
-def export_yaml() -> str:
+def export_yaml(datasource_ids: set[str] | None = None) -> str:
     """The approved semantic model as YAML ("semantic-layer-as-code").
 
     Hand-emitted; scalars are JSON-quoted (valid YAML double-quoted style), so
     table/column names containing YAML metacharacters stay intact.
+    `datasource_ids` is a visibility filter: when given, only relationships
+    whose BOTH endpoints are in the set are emitted (policy-scoped export).
     """
     q = json.dumps  # JSON string escaping == YAML double-quoted scalar escaping
     lines = ["# eiye_db semantic model — approved relationships and metrics", "relationships:"]
     approved = list_relationships(status="approved")
+    if datasource_ids is not None:
+        approved = [
+            r for r in approved
+            if r["from_datasource_id"] in datasource_ids and r["to_datasource_id"] in datasource_ids
+        ]
     if not approved:
         lines.append("  []")
     for r in approved:

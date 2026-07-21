@@ -88,6 +88,9 @@ def delete(datasource_id: str) -> bool:
             | (db.RelationshipRow.to_datasource_id == datasource_id)
         ).delete()
         s.query(db.MetricRow).filter(db.MetricRow.datasource_id == datasource_id).delete()
+        # Policies scoped to this source die with it too — a stale policy
+        # naming a dead id can never match and only misleads the policy list.
+        s.query(db.PolicyRow).filter(db.PolicyRow.resource_id == datasource_id).delete()
         s.delete(row)
         s.commit()
         return True

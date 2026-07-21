@@ -1,0 +1,35 @@
+[
+  {
+    "name": "mask-sensitive-columns",
+    "description": "Defense-in-depth on top of pattern-based PII redaction: mask classically sensitive columns from every non-admin caller, everywhere. Masked columns are dropped from query results and the masking is disclosed in result lineage.",
+    "effect": "deny",
+    "resource_id": "*",
+    "actions": ["read"],
+    "subjects": ["*"],
+    "conditions": { "columns": ["ssn", "salary", "dob", "credit_card", "password"] }
+  },
+  {
+    "name": "block-agents-from-source",
+    "description": "Keep MCP agents out of one source entirely (both data and schema). Replace resource_id with the datasource id to protect. The mcp-stdio subject is the identity every MCP tool call runs as.",
+    "effect": "deny",
+    "resource_id": "REPLACE-WITH-DATASOURCE-ID",
+    "actions": ["read", "discover"],
+    "subjects": ["mcp-stdio"]
+  },
+  {
+    "name": "allow-primary-read-all",
+    "description": "For hardened deployments running EIYE_ABAC_DEFAULT_DENY=true: grants the primary API key baseline read and schema access to every source. Without an allow policy, default-deny blocks all non-admin access.",
+    "effect": "allow",
+    "resource_id": "*",
+    "actions": ["read", "discover"],
+    "subjects": ["primary"]
+  },
+  {
+    "name": "allow-agents-approved-source",
+    "description": "For default-deny deployments: admit MCP agents to one explicitly approved source only. Replace resource_id with the datasource id to expose. Pair with allow-primary-read-all or scope subjects as needed.",
+    "effect": "allow",
+    "resource_id": "REPLACE-WITH-DATASOURCE-ID",
+    "actions": ["read", "discover"],
+    "subjects": ["mcp-stdio"]
+  }
+]

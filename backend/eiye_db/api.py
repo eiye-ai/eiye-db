@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from eiye_db import audit, catalog, metrics, registry, semantic, service
+from eiye_db import audit, catalog, metrics, policy, registry, semantic, service
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import (
     DataSource,
@@ -11,6 +11,7 @@ from eiye_db.models import (
     DataSourceUpdate,
     MetricCreate,
     MetricQuery,
+    PolicyCreate,
     RelationshipUpdate,
     ResolveRequest,
     SourceQueryRequest,
@@ -73,17 +74,22 @@ async def test_datasource(datasource_id: str, identity: Identity = Depends(requi
 @router.post("/datasources/{datasource_id}/discover")
 async def discover_datasource(datasource_id: str, identity: Identity = Depends(require_api_key)):
     try:
-        return await service.discover_schema(datasource_id, identity.key_id)
+        return await service.discover_schema(datasource_id, identity.key_id, is_admin=identity.is_admin)
     except service.NotFoundError:
         raise HTTPException(404, "datasource not found")
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))
 
 
 @router.get("/surface/sources")
 def surface_sources(identity: Identity = Depends(require_api_key)):
+    visible = service.visible_datasource_ids(identity.key_id, identity.is_admin)
     sources = []
     for ds in registry.list_all():
+        if ds.id not in visible:
+            continue
         schema = registry.get_schema(ds.id)
         sources.append(
             {
@@ -102,6 +108,10 @@ def surface_sources(identity: Identity = Depends(require_api_key)):
 def surface_schema(datasource_id: str, identity: Identity = Depends(require_api_key)):
     if registry.get(datasource_id) is None:
         raise HTTPException(404, "datasource not found")
+    try:
+        service.check_schema_access(datasource_id, identity.key_id, identity.is_admin)
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
     schema = registry.get_schema(datasource_id)
     if schema is None:
         raise HTTPException(404, "no schema discovered yet; POST /datasources/{id}/discover first")
@@ -111,6 +121,10 @@ def surface_schema(datasource_id: str, identity: Identity = Depends(require_api_
 @router.post("/semantic/detect")
 def semantic_detect(identity: Identity = Depends(require_api_key)):
     """Run heuristic candidate-join detection across all discovered schemas."""
+    # Detection is a curation operation: it reads every schema and mutates the
+    # global candidate set, so it is admin-gated like review.
+    if not identity.is_admin:
+        raise HTTPException(403, "relationship detection requires the admin API key")
     return service.detect_relationships(identity.key_id)
 
 
@@ -120,7 +134,18 @@ def semantic_relationships(
     datasource_id: str | None = None,
     identity: Identity = Depends(require_api_key),
 ):
-    return semantic.list_relationships(status=status, datasource_id=datasource_id)
+    rels = semantic.list_relationships(status=status, datasource_id=datasource_id)
+    if identity.is_admin:
+        return rels
+    # Non-admin view matches the gated schema surface: no rejected rows, and
+    # nothing touching a source the subject cannot 'discover'.
+    visible = service.visible_datasource_ids(identity.key_id)
+    return [
+        r for r in rels
+        if r["status"] != "rejected"
+        and r["from_datasource_id"] in visible
+        and r["to_datasource_id"] in visible
+    ]
 
 
 @router.put("/semantic/relationships/{relationship_id}")
@@ -156,8 +181,10 @@ def semantic_review(
 
 @router.get("/semantic/export", response_class=PlainTextResponse)
 def semantic_export(identity: Identity = Depends(require_api_key)):
-    """The approved semantic model as YAML (semantic-layer-as-code)."""
-    return semantic.export_yaml() + "\n".join(catalog.export_yaml_lines()) + "\n"
+    """The approved semantic model as YAML (semantic-layer-as-code), scoped to
+    the sources the caller may see."""
+    visible = None if identity.is_admin else service.visible_datasource_ids(identity.key_id)
+    return semantic.export_yaml(visible) + "\n".join(catalog.export_yaml_lines(visible)) + "\n"
 
 
 @router.post("/semantic/metrics", status_code=201)
@@ -180,7 +207,13 @@ def metric_create(req: MetricCreate, identity: Identity = Depends(require_api_ke
 
 @router.get("/semantic/metrics")
 def metric_list(status: str | None = None, identity: Identity = Depends(require_api_key)):
-    return catalog.list_metrics(status=status)
+    metrics_all = catalog.list_metrics(status=status)
+    if identity.is_admin:
+        return metrics_all
+    # Metric templates embed table/column names (and SQL) of their source:
+    # scope the listing to sources the subject may 'discover'.
+    visible = service.visible_datasource_ids(identity.key_id)
+    return [m for m in metrics_all if m["datasource_id"] in visible]
 
 
 @router.put("/semantic/metrics/{metric_id}/review")
@@ -212,13 +245,15 @@ def metric_delete(metric_id: str, identity: Identity = Depends(require_api_key))
 @router.post("/semantic/metrics/{metric_id}/query")
 async def metric_query(metric_id: str, req: MetricQuery, identity: Identity = Depends(require_api_key)):
     try:
-        return await service.run_metric(metric_id, req.params, req.limit, identity.key_id)
+        return await service.run_metric(metric_id, req.params, req.limit, identity.key_id, is_admin=identity.is_admin)
     except service.NotFoundError:
         raise HTTPException(404, "metric not found")
     except catalog.MetricNotApproved as e:
         raise HTTPException(409, str(e))
     except catalog.CatalogError as e:
         raise HTTPException(400, str(e))
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))
     except TimeoutError:
@@ -229,12 +264,14 @@ async def metric_query(metric_id: str, req: MetricQuery, identity: Identity = De
 async def semantic_resolve(req: ResolveRequest, identity: Identity = Depends(require_api_key)):
     try:
         return await service.resolve_entities(
-            req.left.model_dump(), req.right.model_dump(), req.limit, identity.key_id
+            req.left.model_dump(), req.right.model_dump(), req.limit, identity.key_id, is_admin=identity.is_admin
         )
     except service.NotFoundError:
         raise HTTPException(404, "datasource not found")
     except ValueError as e:
         raise HTTPException(400, str(e))
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))
     except TimeoutError:
@@ -247,14 +284,55 @@ async def query(req: SourceQueryRequest, identity: Identity = Depends(require_ap
         raise HTTPException(403, "include_pii requires the admin API key")
     try:
         return await service.run_query(
-            req.datasource_id, req.request, req.limit, identity.key_id, include_pii=req.include_pii
+            req.datasource_id, req.request, req.limit, identity.key_id,
+            include_pii=req.include_pii, is_admin=identity.is_admin,
         )
     except service.NotFoundError:
         raise HTTPException(404, "datasource not found")
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))
     except TimeoutError:
         raise HTTPException(504, "query timed out")
+
+
+# Policies are the governance levers themselves: every operation, including
+# reading them, is admin-only (a policy list reveals what is being protected).
+@router.post("/policies", status_code=201)
+def policy_create(req: PolicyCreate, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "policy management requires the admin API key")
+    if req.resource_id != "*" and registry.get(req.resource_id) is None:
+        raise HTTPException(400, f"resource_id must be '*' or an existing datasource id: {req.resource_id}")
+    try:
+        created = policy.create(
+            req.name, req.description, req.effect, req.resource_id, req.actions, req.subjects, req.conditions
+        )
+    except policy.PolicyError as e:
+        raise HTTPException(400, str(e))
+    # The full definition goes in the audit record: who was granted/denied
+    # what must be reconstructable from the trail alone.
+    audit.record("create_policy", "policy", created["id"], identity.key_id, details=created)
+    return created
+
+
+@router.get("/policies")
+def policy_list(identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "policy management requires the admin API key")
+    return policy.list_policies()
+
+
+@router.delete("/policies/{policy_id}", status_code=204)
+def policy_delete(policy_id: str, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "policy management requires the admin API key")
+    removed = policy.delete(policy_id)
+    if removed is None:
+        raise HTTPException(404, "policy not found")
+    # Deleting a policy changes who can access what: record what was removed.
+    audit.record("delete_policy", "policy", policy_id, identity.key_id, details=removed)
 
 
 @router.get("/audit")

@@ -5,13 +5,14 @@ connector (read-only) → PII redaction → audit trail.
 """
 
 import asyncio
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, catalog, pii, registry, resolution, semantic
+from eiye_db import audit, catalog, pii, policy, registry, resolution, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -45,8 +46,39 @@ async def test_connection(datasource_id: str, key_id: str) -> DataSource:
     return registry.get(ds.id)
 
 
-async def discover_schema(datasource_id: str, key_id: str) -> dict[str, Any]:
+def _check_policy(action: str, ds_id: str, key_id: str, is_admin: bool) -> set[str]:
+    """Policy gate for one access; audited denial, returns columns to mask.
+
+    The audit record carries the specific reason (e.detail, incl. the policy
+    name); the exception the caller sees stays generic.
+    """
+    try:
+        return policy.check(key_id, is_admin, action, ds_id)
+    except policy.PolicyDenied as e:
+        audit.record(
+            "policy_deny", "datasource", ds_id, key_id, ds_id,
+            details={"action": action, "reason": e.detail}, success=False,
+        )
+        raise
+
+
+def check_schema_access(datasource_id: str, key_id: str, is_admin: bool = False) -> None:
+    """Gate for reading an already-discovered schema (REST surface + MCP)."""
+    _check_policy("discover", datasource_id, key_id, is_admin)
+    # Schema reads are access too: audited like queries, not just their denials.
+    audit.record("read_schema", "datasource", datasource_id, key_id, datasource_id)
+
+
+def visible_datasource_ids(key_id: str, is_admin: bool = False) -> set[str]:
+    """Datasources the subject may 'discover' — the filter every metadata
+    listing (sources, relationships, metrics, export) applies so denied
+    sources don't leak through side channels."""
+    return {ds.id for ds in registry.list_all() if policy.permits(key_id, is_admin, "discover", ds.id)}
+
+
+async def discover_schema(datasource_id: str, key_id: str, is_admin: bool = False) -> dict[str, Any]:
     ds = _get_or_raise(datasource_id)
+    _check_policy("discover", ds.id, key_id, is_admin)
     connector = get_connector(ds.type, ds.config)
     try:
         tables = await connector.discover_schema()
@@ -98,7 +130,9 @@ def detect_relationships(key_id: str) -> list[dict[str, Any]]:
     return heuristic + behavioral
 
 
-async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id: str) -> dict[str, Any]:
+async def run_metric(
+    metric_id: str, params: dict[str, Any], limit: int, key_id: str, is_admin: bool = False
+) -> dict[str, Any]:
     """Execute an approved metric: template + validated params → governed query.
 
     The underlying run_query applies the full chain (read-only connector, PII
@@ -111,10 +145,10 @@ async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id:
     safe_params = pii.redact_structure(params)[0]
     try:
         request = catalog.build_request(metric, params)  # raises CatalogError if not approved / bad params
-        result = await run_query(metric["datasource_id"], request, limit, key_id)
+        result = await run_query(metric["datasource_id"], request, limit, key_id, is_admin=is_admin)
         # Lineage: these rows exist because of this governed definition.
         result.lineage["metric"] = {"id": metric["id"], "name": metric["name"], "params": safe_params}
-    except (catalog.CatalogError, ConnectorError, TimeoutError) as e:
+    except (catalog.CatalogError, ConnectorError, TimeoutError, policy.PolicyDenied) as e:
         # Failures are lineage too: a denied or broken execution must be traceable.
         audit.record(
             "query_metric",
@@ -175,7 +209,9 @@ def propose_relationship(
     rejects it via the review endpoint (draft → approve → enforce).
     """
     for ds_id in (from_datasource_id, to_datasource_id):
-        if registry.get(ds_id) is None:
+        # A discover-denied source answers exactly like a missing one, so the
+        # proposal tool can't be used as an existence/schema oracle.
+        if registry.get(ds_id) is None or not policy.permits(key_id, False, "discover", ds_id):
             raise NotFoundError(f"datasource not found: {ds_id}")
     if _proposal_queue_full():
         audit.record("propose_relationship", "semantic", "queue-full", key_id, success=False)
@@ -230,7 +266,7 @@ def propose_metric(
 ) -> dict[str, Any]:
     """An agent drafts a metric definition. Lands as a candidate; cannot execute
     until a human approves it."""
-    if registry.get(datasource_id) is None:
+    if registry.get(datasource_id) is None or not policy.permits(key_id, False, "discover", datasource_id):
         raise NotFoundError(f"datasource not found: {datasource_id}")
     if _proposal_queue_full():
         audit.record("propose_metric", "metric", "queue-full", key_id, success=False)
@@ -244,7 +280,9 @@ def propose_metric(
     return metric
 
 
-async def resolve_entities(left: dict[str, Any], right: dict[str, Any], limit: int, key_id: str) -> dict[str, Any]:
+async def resolve_entities(
+    left: dict[str, Any], right: dict[str, Any], limit: int, key_id: str, is_admin: bool = False
+) -> dict[str, Any]:
     """Cross-source entity matching over two governed query results.
 
     Each side is {"datasource_id", "request", "column"}. Both sides go through
@@ -265,7 +303,7 @@ async def resolve_entities(left: dict[str, Any], right: dict[str, Any], limit: i
         results: dict[str, SourceQueryResponse] = {}
         values: dict[str, list] = {}
         for label, side in (("left", left), ("right", right)):
-            res = await run_query(side["datasource_id"], side["request"], limit, key_id)
+            res = await run_query(side["datasource_id"], side["request"], limit, key_id, is_admin=is_admin)
             col = side["column"]
             if res.rows and all(col not in row for row in res.rows):
                 raise ValueError(f"column {col!r} not in the {label} result")
@@ -274,7 +312,7 @@ async def resolve_entities(left: dict[str, Any], right: dict[str, Any], limit: i
         # Matching is pure CPU over up to 1000 values per side; keep it off
         # the event loop so a large resolve can't stall other requests.
         matched = await asyncio.to_thread(resolution.match_values, values["left"], values["right"])
-    except (ConnectorError, TimeoutError, ValueError, NotFoundError) as e:
+    except (ConnectorError, TimeoutError, ValueError, NotFoundError, policy.PolicyDenied) as e:
         # A failed resolve is still a cross-source correlation attempt; the
         # underlying query audits alone would make it look like plain queries.
         audit.record(
@@ -315,14 +353,50 @@ def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:
     return [r for r in rels if r["status"] == "approved"] + [r for r in rels if r["status"] == "candidate"]
 
 
+def _strip_masked(obj: Any, masked_lower: set[str]) -> Any:
+    """Drop masked keys recursively (case-insensitive): nested/composite
+    results (row_to_json, REST objects) must not smuggle a masked column."""
+    if isinstance(obj, dict):
+        return {k: _strip_masked(v, masked_lower) for k, v in obj.items() if str(k).lower() not in masked_lower}
+    if isinstance(obj, list):
+        return [_strip_masked(v, masked_lower) for v in obj]
+    return obj
+
+
+def _sql_references_masked(sql: str, masked_lower: set[str]) -> str | None:
+    """First masked column the SQL text names, else None.
+
+    A column cannot be projected without writing its name (aliases rename the
+    output but the source identifier still appears), so a word-boundary scan
+    closes the `SELECT ssn AS x` bypass. Fail-closed by design: a match in a
+    string literal or comment also denies.
+    """
+    for col in sorted(masked_lower):
+        if re.search(rf"\b{re.escape(col)}\b", sql, re.IGNORECASE):
+            return col
+    return None
+
+
 async def run_query(
     datasource_id: str,
     request: dict[str, Any],
     limit: int,
     key_id: str,
     include_pii: bool = False,
+    is_admin: bool = False,
 ) -> SourceQueryResponse:
     ds = _get_or_raise(datasource_id)
+    masked = _check_policy("read", ds.id, key_id, is_admin)
+    masked_lower = {m.lower() for m in masked}
+    if masked_lower and isinstance(request.get("sql"), str):
+        col = _sql_references_masked(request["sql"], masked_lower)
+        if col is not None:
+            audit.record(
+                "policy_deny", "datasource", ds.id, key_id, ds.id,
+                details={"action": "read", "reason": f"query text references masked column '{col}'"},
+                success=False,
+            )
+            raise policy.PolicyDenied(f"query text references masked column '{col}'")
     connector = get_connector(ds.type, ds.config)
     # Query text (SQL predicates, REST params) can itself contain PII — redact
     # before it is persisted to the audit trail.
@@ -339,6 +413,10 @@ async def run_query(
         await connector.close()
 
     rows = jsonable_encoder(rows)
+    if masked_lower:
+        # Policy-masked columns are dropped before anything else sees them —
+        # they never reach redaction, the response, or the caller.
+        rows = _strip_masked(rows, masked_lower)
     pii_counts: dict[str, int] = {}
     if not include_pii:
         # NER redaction is CPU-heavy; run it off the event loop so it can't stall
@@ -363,6 +441,8 @@ async def run_query(
             "datasource": {"id": ds.id, "name": ds.name, "type": str(ds.type)},
             "request": safe_request,  # already PII-redacted
             "executed_at": started_at.isoformat(),
+            # Disclose masking so a missing column reads as policy, not absence.
+            **({"policy": {"masked_columns": sorted(masked)}} if masked else {}),
         },
     )
     audit.record(
