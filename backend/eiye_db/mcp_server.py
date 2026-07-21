@@ -120,6 +120,32 @@ def propose_metric(
     return service.propose_metric(name, description, datasource_id, request_template, params or {}, MCP_KEY_ID)
 
 
+@mcp.tool()
+async def resolve_entities(
+    left_datasource_id: str,
+    left_request: dict[str, Any],
+    left_column: str,
+    right_datasource_id: str,
+    right_request: dict[str, Any],
+    right_column: str,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Match entity names across two query results — e.g. does "vendor_name" in
+    one source refer to the same organizations as "employer" in another?
+    Each request is connector-specific (same shapes as query_datasource); the
+    named column's values are matched after normalization (suffixes like LLC/
+    INC stripped). Matches are tiered: "high" = identical after normalization,
+    "medium" = same words reordered, "low" = strong token overlap. These are
+    heuristic ANALYSIS, not governed truth — if a match reveals a real join,
+    propose_relationship it for human review."""
+    return await service.resolve_entities(
+        {"datasource_id": left_datasource_id, "request": left_request, "column": left_column},
+        {"datasource_id": right_datasource_id, "request": right_request, "column": right_column},
+        min(max(limit, 1), 1000),
+        MCP_KEY_ID,
+    )
+
+
 def main() -> None:
     db.configure()
     if settings.pii_ner_enabled:

@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, catalog, pii, registry, semantic
+from eiye_db import audit, catalog, pii, registry, resolution, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -242,6 +242,66 @@ def propose_metric(
         raise
     audit.record("propose_metric", "metric", metric["id"], key_id, datasource_id, details={"name": name})
     return metric
+
+
+async def resolve_entities(left: dict[str, Any], right: dict[str, Any], limit: int, key_id: str) -> dict[str, Any]:
+    """Cross-source entity matching over two governed query results.
+
+    Each side is {"datasource_id", "request", "column"}. Both sides go through
+    run_query — the full chain (read-only, PII redaction, audit) — so matching
+    only ever sees values the caller could see. Matches are per-call analysis,
+    never persisted, and carry tiered confidence, not authority.
+    """
+    # Column names are caller-supplied text: redact before they reach the
+    # audit trail, same posture as query requests and proposal rationales.
+    safe_details = pii.redact_structure(
+        {
+            "left": {"datasource_id": left["datasource_id"], "column": left["column"]},
+            "right": {"datasource_id": right["datasource_id"], "column": right["column"]},
+        }
+    )[0]
+    resource_id = f"{left['datasource_id']}:{right['datasource_id']}"
+    try:
+        results: dict[str, SourceQueryResponse] = {}
+        values: dict[str, list] = {}
+        for label, side in (("left", left), ("right", right)):
+            res = await run_query(side["datasource_id"], side["request"], limit, key_id)
+            col = side["column"]
+            if res.rows and all(col not in row for row in res.rows):
+                raise ValueError(f"column {col!r} not in the {label} result")
+            results[label] = res
+            values[label] = [row.get(col) for row in res.rows]
+        # Matching is pure CPU over up to 1000 values per side; keep it off
+        # the event loop so a large resolve can't stall other requests.
+        matched = await asyncio.to_thread(resolution.match_values, values["left"], values["right"])
+    except (ConnectorError, TimeoutError, ValueError, NotFoundError) as e:
+        # A failed resolve is still a cross-source correlation attempt; the
+        # underlying query audits alone would make it look like plain queries.
+        audit.record(
+            "resolve_entities", "semantic", resource_id, key_id,
+            details={**safe_details, "error": type(e).__name__}, success=False,
+        )
+        raise
+    matches = matched["matches"]
+    by_confidence: dict[str, int] = {}
+    for m in matches:
+        by_confidence[m["confidence"]] = by_confidence.get(m["confidence"], 0) + 1
+    audit.record(
+        "resolve_entities", "semantic", resource_id, key_id,
+        details={**safe_details, "matches": by_confidence},
+    )
+    return {
+        "matches": matches,
+        "stats": {
+            "left_rows": results["left"].row_count,
+            "right_rows": results["right"].row_count,
+            "left_distinct": matched["left_distinct"],
+            "right_distinct": matched["right_distinct"],
+            "matches": len(matches),
+            "by_confidence": by_confidence,
+        },
+        "lineage": {"left": results["left"].lineage, "right": results["right"].lineage},
+    }
 
 
 def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:

@@ -12,6 +12,7 @@ from eiye_db.models import (
     MetricCreate,
     MetricQuery,
     RelationshipUpdate,
+    ResolveRequest,
     SourceQueryRequest,
     SourceQueryResponse,
 )
@@ -217,6 +218,22 @@ async def metric_query(metric_id: str, req: MetricQuery, identity: Identity = De
     except catalog.MetricNotApproved as e:
         raise HTTPException(409, str(e))
     except catalog.CatalogError as e:
+        raise HTTPException(400, str(e))
+    except ConnectorError as e:
+        raise HTTPException(502, str(e))
+    except TimeoutError:
+        raise HTTPException(504, "query timed out")
+
+
+@router.post("/semantic/resolve")
+async def semantic_resolve(req: ResolveRequest, identity: Identity = Depends(require_api_key)):
+    try:
+        return await service.resolve_entities(
+            req.left.model_dump(), req.right.model_dump(), req.limit, identity.key_id
+        )
+    except service.NotFoundError:
+        raise HTTPException(404, "datasource not found")
+    except ValueError as e:
         raise HTTPException(400, str(e))
     except ConnectorError as e:
         raise HTTPException(502, str(e))

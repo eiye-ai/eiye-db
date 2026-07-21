@@ -169,6 +169,23 @@ class MetricQuery(BaseModel):
     limit: int = Field(100, ge=1, le=1000)
 
 
+class ResolveSide(BaseModel):
+    """One side of an entity-resolution request: a governed query plus the
+    column whose values name the entities."""
+
+    datasource_id: str
+    request: dict[str, Any]
+    column: str
+
+
+class ResolveRequest(BaseModel):
+    """Match entity names across two governed query results."""
+
+    left: ResolveSide
+    right: ResolveSide
+    limit: int = Field(100, ge=1, le=1000)
+
+
 class SourceQueryRequest(BaseModel):
     """A source-scoped query. `request` is connector-specific:
     postgres: {"sql": "SELECT ..."} · filesystem: {"path": "rel/file.csv"} ·
