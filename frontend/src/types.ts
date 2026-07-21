@@ -55,6 +55,17 @@ export interface QueryResponse {
   execution_time_ms: number;
 }
 
+export interface Metric {
+  id: string;
+  name: string;
+  description: string;
+  datasource_id: string;
+  request_template: Record<string, unknown>;
+  params: Record<string, { type: "string" | "number"; default?: unknown }>;
+  source: "human" | "proposed";
+  status: "approved" | "candidate" | "rejected";
+}
+
 export const TYPE_LABELS: Record<DataSourceType, string> = {
   filesystem: "Filesystem",
   postgresql: "PostgreSQL",

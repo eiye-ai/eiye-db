@@ -4,10 +4,13 @@ import type { DataSource } from "./types";
 import { TYPE_LABELS } from "./types";
 import DataSourceForm from "./components/DataSourceForm";
 import DataSourcePanel from "./components/DataSourcePanel";
+import SemanticPanel from "./components/SemanticPanel";
 
 type Mode = "idle" | "new" | "edit";
+type View = "sources" | "semantic";
 
 export default function App() {
+  const [view, setView] = useState<View>("sources");
   const [sources, setSources] = useState<DataSource[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>("idle");
@@ -46,6 +49,14 @@ export default function App() {
         <h1>
           eiye_db <span>Semantic Surface</span>
         </h1>
+        <nav className="tabs">
+          <button className={view === "sources" ? "tab active" : "tab"} onClick={() => setView("sources")}>
+            Datasources
+          </button>
+          <button className={view === "semantic" ? "tab active" : "tab"} onClick={() => setView("semantic")}>
+            Semantic model
+          </button>
+        </nav>
         <div className="api-key">
           <input
             type="password"
@@ -57,6 +68,11 @@ export default function App() {
         </div>
       </header>
 
+      {view === "semantic" ? (
+        <main className="single">
+          <SemanticPanel sources={sources} />
+        </main>
+      ) : (
       <div className="layout">
         <aside>
           <div className="aside-head">
@@ -122,6 +138,7 @@ export default function App() {
           )}
         </main>
       </div>
+      )}
     </div>
   );
 }

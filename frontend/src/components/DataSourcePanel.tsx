@@ -151,6 +151,23 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
               </div>
             </details>
           ))}
+          {schema.relationships && schema.relationships.length > 0 && (
+            <>
+              <h3 style={{ marginTop: 14 }}>
+                Relationships <span className="hint">approved = ground truth · candidate = unreviewed</span>
+              </h3>
+              {schema.relationships.map((r) => (
+                <div key={r.id} className="review-row settled">
+                  <span className="join">
+                    {r.from_table}.{r.from_column} <span className="arrow">↔</span> {r.to_table}.{r.to_column}
+                  </span>
+                  <span className={`badge status-${r.status === "approved" ? "connected" : "discovered"}`}>
+                    {r.status}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
 

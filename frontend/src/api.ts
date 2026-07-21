@@ -1,4 +1,4 @@
-import type { DataSource, DataSourceType, QueryResponse, Schema } from "./types";
+import type { DataSource, DataSourceType, Metric, QueryResponse, Relationship, Schema } from "./types";
 
 // Default to the Vite proxy path (/api/v1). Set VITE_API_BASE to hit the backend
 // directly (e.g. http://localhost:8000/api/v1) — the backend allows CORS for it.
@@ -74,4 +74,14 @@ export const api = {
   discover: (id: string) => req<Schema>(`/datasources/${id}/discover`, { method: "POST" }),
   schema: (id: string) => req<Schema>(`/surface/schema/${id}`),
   query: (body: QueryBody) => req<QueryResponse>("/query", { method: "POST", body: JSON.stringify(body) }),
+
+  relationships: (status?: string) =>
+    req<Relationship[]>(`/semantic/relationships${status ? `?status=${status}` : ""}`),
+  detect: () => req<Relationship[]>("/semantic/detect", { method: "POST" }),
+  reviewRelationship: (id: string, status: "approved" | "rejected") =>
+    req<Relationship>(`/semantic/relationships/${id}`, { method: "PUT", body: JSON.stringify({ status }) }),
+  metrics: () => req<Metric[]>("/semantic/metrics"),
+  reviewMetric: (id: string, status: "approved" | "rejected") =>
+    req<Metric>(`/semantic/metrics/${id}/review`, { method: "PUT", body: JSON.stringify({ status }) }),
+  removeMetric: (id: string) => req<void>(`/semantic/metrics/${id}`, { method: "DELETE" }),
 };

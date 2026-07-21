@@ -394,3 +394,62 @@ tbody tr:last-child td {
   padding: 40px 0;
   text-align: center;
 }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+.tab {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 7px 14px;
+  border-radius: 6px;
+}
+.tab:hover {
+  color: var(--text);
+}
+.tab.active {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+main.single {
+  padding: 20px;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.review-row:first-of-type {
+  border-top: none;
+}
+.review-row.settled {
+  opacity: 0.85;
+}
+.review-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.join {
+  font-weight: 600;
+}
+.arrow {
+  color: var(--accent);
+  font-weight: 400;
+}
+.template {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
