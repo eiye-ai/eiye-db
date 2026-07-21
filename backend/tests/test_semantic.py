@@ -234,6 +234,141 @@ def test_review_requires_admin(client, monkeypatch):
     assert client.put(url, json={"status": "approved"}, headers={"X-API-Key": "root-secret"}).status_code == 200
 
 
+def test_joins_in_sql_alias_resolution():
+    sql = "SELECT * FROM orders o JOIN customers AS c ON o.customer_id = c.id WHERE o.total > 5"
+    assert semantic._joins_in_sql(sql) == [("orders", "customer_id", "customers", "id")]
+    # bare JOIN with ON keyword directly after the table must not treat ON as an alias
+    sql2 = "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id"
+    assert semantic._joins_in_sql(sql2) == [("orders", "customer_id", "customers", "id")]
+    assert semantic._joins_in_sql("SELECT 1") == []
+    # self-join produces nothing (same table both sides)
+    assert semantic._joins_in_sql("SELECT * FROM t a JOIN t b ON a.x = b.x") == []
+
+
+def _schemas_for(ds_id):
+    from eiye_db import registry
+
+    schema = registry.get_schema(ds_id)
+    return [(ds_id, "demo", schema["tables"])]
+
+
+def test_behavioral_mining_from_audit(client, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    # a user ran this JOIN twice; the audit trail remembers. The joined pair
+    # (amount = city) is one the name heuristic would never propose — this edge
+    # exists only because someone actually ran it.
+    sql = "SELECT * FROM orders JOIN customers ON orders.amount = customers.city"
+    for _ in range(2):
+        audit.record("query", "datasource", ds["id"], "primary", ds["id"], details={"request": {"sql": sql}})
+    cands = semantic.mine_audit_joins(_schemas_for(ds["id"]))
+    assert len(cands) == 1
+    c = cands[0]
+    assert c["source"] == "behavioral" and c["confidence"] == 0.7
+    assert "2 audited queries by 1 distinct caller" in c["rationale"]
+    # bare "orders"/"customers" in SQL resolve to the canonical schema names
+    assert {c["from_table"], c["to_table"]} == {"orders.csv", "customers.csv"}
+    # flows through detect: filesystem heuristic candidate + behavioral candidate
+    created = client.post("/api/v1/semantic/detect").json()
+    sources = {r["source"] for r in created}
+    assert sources == {"heuristic", "behavioral"}
+    # failed queries are ignored
+    audit.record("query", "datasource", ds["id"], "primary", ds["id"],
+                 details={"request": {"sql": "SELECT * FROM a JOIN b ON a.x = b.y"}}, success=False)
+    assert all(c["from_table"] != "a" for c in semantic.mine_audit_joins(_schemas_for(ds["id"])))
+
+
+def test_behavioral_mining_counts_distinct_callers(client, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    sql = "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id"
+    # one caller hammering a join 5x is weaker evidence than 2 distinct callers
+    for _ in range(5):
+        audit.record("query", "datasource", ds["id"], "loud-key", ds["id"], details={"request": {"sql": sql}})
+    audit.record("query", "datasource", ds["id"], "other-key", ds["id"], details={"request": {"sql": sql}})
+    cands = semantic.mine_audit_joins(_schemas_for(ds["id"]))
+    assert len(cands) == 1
+    assert "6 audited queries by 2 distinct callers" in cands[0]["rationale"]
+
+
+def test_behavioral_mining_drops_phantom_endpoints(client, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    # CTE / fabricated table names and unknown columns must not become candidates
+    for sql in (
+        "WITH evil AS (SELECT 1 AS id) SELECT * FROM evil JOIN customers ON evil.id = customers.id",
+        "SELECT * FROM orders JOIN customers ON orders.no_such_col = customers.id",
+        "SELECT * FROM public.orders o JOIN public.customers c ON o.customer_id = c.id",
+    ):
+        audit.record("query", "datasource", ds["id"], "k", ds["id"], details={"request": {"sql": sql}})
+    cands = semantic.mine_audit_joins(_schemas_for(ds["id"]))
+    # only the schema-qualified real join survives (qualifier stripped, endpoints validated)
+    assert len(cands) == 1
+    assert {cands[0]["from_table"], cands[0]["to_table"]} == {"orders.csv", "customers.csv"}
+
+
+def test_behavioral_mining_excludes_dead_datasources(client, tmp_path):
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    sql = "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id"
+    audit.record("query", "datasource", ds["id"], "k", ds["id"], details={"request": {"sql": sql}})
+    # audit rows referencing a datasource not in the live schema list are skipped
+    assert semantic.mine_audit_joins([]) == []
+    audit.record("query", "datasource", "gone-ds", "k", "gone-ds", details={"request": {"sql": sql}})
+    cands = semantic.mine_audit_joins(_schemas_for(ds["id"]))
+    assert all(c["from_datasource_id"] == ds["id"] for c in cands)
+
+
+def test_behavioral_candidates_respect_proposal_queue_cap(client, tmp_path, monkeypatch):
+    from eiye_db import audit, service
+
+    ds = _register_demo(client, tmp_path)
+    sql = "SELECT * FROM orders JOIN customers ON orders.customer_id = customers.id"
+    audit.record("query", "datasource", ds["id"], "k", ds["id"], details={"request": {"sql": sql}})
+    # queue already full -> behavioral candidates are not created
+    monkeypatch.setattr(service, "_outstanding_proposals", lambda: service.PROPOSAL_QUEUE_CAP)
+    created = service.detect_relationships("primary")
+    assert all(r["source"] != "behavioral" for r in created)
+
+
+def test_lineage_on_query_and_metric(client, tmp_path):
+    from eiye_db import catalog
+
+    ds = _register_demo(client, tmp_path)
+    res = client.post(
+        "/api/v1/query", json={"datasource_id": ds["id"], "request": {"path": "customers.csv"}}
+    ).json()
+    lin = res["lineage"]
+    assert lin["datasource"]["name"] == "demo" and lin["request"] == {"path": "customers.csv"}
+    assert lin["executed_at"]
+
+    m = catalog.create("sample", "", ds["id"], {"path": "customers.csv"}, {}, source="human")
+    out = client.post(f"/api/v1/semantic/metrics/{m['id']}/query", json={}).json()
+    assert out["result"]["lineage"]["metric"]["name"] == "sample"
+    assert out["result"]["lineage"]["datasource"]["id"] == ds["id"]
+
+
+def test_metric_envelope_redacts_param_pii(client, tmp_path):
+    from eiye_db import catalog
+
+    ds = _register_demo(client, tmp_path)
+    m = catalog.create(
+        "by-owner", "", ds["id"], {"path": "customers.csv", "owner": "{owner}"},
+        {"owner": {"type": "string"}}, source="human",
+    )
+    # '@' passes the param allowlist, so an email can legally reach the params —
+    # the envelope and lineage must re-serve it redacted
+    out = client.post(
+        f"/api/v1/semantic/metrics/{m['id']}/query", json={"params": {"owner": "alice@example.com"}}
+    ).json()
+    assert "alice@example.com" not in str(out["metric"]["params"])
+    assert "alice@example.com" not in str(out["result"]["lineage"])
+
+
 def test_datasource_delete_cascades_relationships(client, tmp_path):
     ds = _register_demo(client, tmp_path)
     client.post("/api/v1/semantic/detect")

@@ -71,7 +71,7 @@ async def discover_schema(datasource_id: str, key_id: str) -> dict[str, Any]:
 
 
 def detect_relationships(key_id: str) -> list[dict[str, Any]]:
-    """Heuristic candidate-join detection across all discovered schemas.
+    """Candidate-join detection: heuristic (schema shape) + behavioral (audit mining).
 
     Candidates are never authoritative — they stay status="candidate" until a
     human approves them. Existing rows (and their approve/reject decisions)
@@ -83,11 +83,19 @@ def detect_relationships(key_id: str) -> list[dict[str, Any]]:
         if schema and schema.get("tables"):
             schemas.append((ds.id, ds.name, schema["tables"]))
     pruned = semantic.prune_stale_candidates(schemas)
-    created = semantic.upsert(semantic.detect_candidates(schemas))
+    heuristic = semantic.upsert(semantic.detect_candidates(schemas))
+    # Behavioral candidates only fill the review queue's remaining budget,
+    # strongest evidence first (mine_audit_joins pre-sorts by distinct callers).
+    remaining = max(0, PROPOSAL_QUEUE_CAP - _outstanding_proposals())
+    behavioral = semantic.upsert(semantic.mine_audit_joins(schemas)[:remaining]) if remaining else []
     audit.record(
-        "detect_relationships", "semantic", "all", key_id, details={"new_candidates": len(created), "pruned": pruned}
+        "detect_relationships",
+        "semantic",
+        "all",
+        key_id,
+        details={"heuristic": len(heuristic), "behavioral": len(behavioral), "pruned": pruned},
     )
-    return created
+    return heuristic + behavioral
 
 
 async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id: str) -> dict[str, Any]:
@@ -104,6 +112,8 @@ async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id:
     try:
         request = catalog.build_request(metric, params)  # raises CatalogError if not approved / bad params
         result = await run_query(metric["datasource_id"], request, limit, key_id)
+        # Lineage: these rows exist because of this governed definition.
+        result.lineage["metric"] = {"id": metric["id"], "name": metric["name"], "params": safe_params}
     except (catalog.CatalogError, ConnectorError, TimeoutError) as e:
         # Failures are lineage too: a denied or broken execution must be traceable.
         audit.record(
@@ -125,20 +135,28 @@ async def run_metric(metric_id: str, params: dict[str, Any], limit: int, key_id:
         details={"name": metric["name"], "params": safe_params, "rows": result.row_count},
     )
     return {
-        "metric": {"id": metric["id"], "name": metric["name"], "params": params},
+        # Redacted params in the envelope too — one consistent redaction posture
+        # per response (params can legally contain emails: '@' passes the allowlist).
+        "metric": {"id": metric["id"], "name": metric["name"], "params": safe_params},
         "result": result.model_dump(mode="json"),
     }
 
 
 # Outstanding unreviewed proposals are bounded so a runaway (or injected) agent
-# cannot flood the human review queue.
+# cannot flood the human review queue. Behavioral candidates share the budget:
+# they are equally caller-influenceable (crafted queries), unlike heuristic
+# candidates, which are bounded by schema size.
 PROPOSAL_QUEUE_CAP = 100
 
 
-def _proposal_queue_full() -> bool:
-    pending_rels = [r for r in semantic.list_relationships(status="candidate") if r["source"] == "proposed"]
+def _outstanding_proposals() -> int:
+    pending_rels = [r for r in semantic.list_relationships(status="candidate") if r["source"] in ("proposed", "behavioral")]
     pending_metrics = catalog.list_metrics(status="candidate")
-    return (len(pending_rels) + len(pending_metrics)) >= PROPOSAL_QUEUE_CAP
+    return len(pending_rels) + len(pending_metrics)
+
+
+def _proposal_queue_full() -> bool:
+    return _outstanding_proposals() >= PROPOSAL_QUEUE_CAP
 
 
 def propose_relationship(
@@ -249,6 +267,7 @@ async def run_query(
     # Query text (SQL predicates, REST params) can itself contain PII — redact
     # before it is persisted to the audit trail.
     safe_request = pii.redact_structure(request)[0]
+    started_at = datetime.now(timezone.utc)
     start = time.monotonic()
     try:
         async with asyncio.timeout(QUERY_TIMEOUT_SECONDS):
@@ -280,6 +299,11 @@ async def run_query(
         pii_filtered=not include_pii,
         pii_counts=pii_counts,
         execution_time_ms=(time.monotonic() - start) * 1000,
+        lineage={
+            "datasource": {"id": ds.id, "name": ds.name, "type": str(ds.type)},
+            "request": safe_request,  # already PII-redacted
+            "executed_at": started_at.isoformat(),
+        },
     )
     audit.record(
         "query",

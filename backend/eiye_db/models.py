@@ -189,6 +189,10 @@ class SourceQueryResponse(BaseModel):
     pii_filtered: bool
     pii_counts: dict[str, int] = Field(default_factory=dict)
     execution_time_ms: float = 0.0
+    # Result-level lineage: where these rows came from and which governed
+    # definition (if any) produced them — enough to trace a result back to its
+    # source without consulting the audit log.
+    lineage: dict[str, Any] = Field(default_factory=dict)
 
 
 class QueryRequest(BaseModel):

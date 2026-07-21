@@ -161,6 +161,132 @@ def detect_candidates(schemas: list[tuple[str, str, list[dict[str, Any]]]]) -> l
     return out
 
 
+# --- behavioral discovery: mine audited SQL for the joins users actually run ---
+
+_SQL_KEYWORDS = {
+    "on", "where", "inner", "left", "right", "outer", "full", "cross", "join",
+    "using", "group", "order", "limit", "having", "union", "as", "set",
+}
+# The alias group must not swallow a following keyword ("FROM orders JOIN ..."
+# would otherwise capture JOIN as the alias and hide the joined table). Table
+# names may be schema-qualified (public.orders); the last segment is the table.
+_KW_ALT = r"(?:" + "|".join(k.upper() for k in _SQL_KEYWORDS) + r")\b"
+_FROM_JOIN_RE = re.compile(
+    rf"\b(?:FROM|JOIN)\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+(?:AS\s+)?(?!{_KW_ALT})([A-Za-z_]\w*))?",
+    re.IGNORECASE,
+)
+_ON_EQ_RE = re.compile(r"\bON\s+([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\.([A-Za-z_]\w*)", re.IGNORECASE)
+
+# Bound the audit scan: only the most recent successful queries are mined, so
+# detect cost stays flat as the audit trail grows.
+_AUDIT_SCAN_LIMIT = 5000
+
+
+def _joins_in_sql(sql: str) -> list[tuple[str, str, str, str]]:
+    """Extract equi-join endpoints (table, column, table, column) from one SQL text.
+
+    Alias-aware but regex-level by design: this feeds *candidates* for human
+    review, so missed or spurious parses cost a review click, not correctness.
+    """
+    aliases: dict[str, str] = {}
+    for table, alias in _FROM_JOIN_RE.findall(sql):
+        table = table.rsplit(".", 1)[-1]  # strip schema qualification
+        aliases[table.lower()] = table
+        if alias and alias.lower() not in _SQL_KEYWORDS:
+            aliases[alias.lower()] = table
+    out = []
+    for a, col_a, b, col_b in _ON_EQ_RE.findall(sql):
+        ta, tb = aliases.get(a.lower()), aliases.get(b.lower())
+        if ta and tb and ta != tb:
+            out.append((ta, col_a, tb, col_b))
+    return out
+
+
+def _schema_lookup(schemas: list[tuple[str, str, list[dict[str, Any]]]]) -> dict[str, dict[str, tuple]]:
+    """Per-datasource case-insensitive table lookup: name OR stem -> (canonical, columns).
+
+    Stems let audited SQL like "JOIN customers" match a filesystem table named
+    "customers.csv"; canonical spelling is what gets persisted.
+    """
+    lookup: dict[str, dict[str, tuple]] = {}
+    for ds_id, _name, tables in schemas:
+        entry: dict[str, tuple] = {}
+        for t in tables:
+            cols = {f["name"].lower(): f["name"] for f in t.get("fields") or []}
+            entry[t["name"].lower()] = (t["name"], cols)
+            entry.setdefault(_table_stem(t["name"]), (t["name"], cols))
+        lookup[ds_id] = entry
+    return lookup
+
+
+def mine_audit_joins(schemas: list[tuple[str, str, list[dict[str, Any]]]]) -> list[dict[str, Any]]:
+    """Turn audited SQL queries into behavioral relationship candidates.
+
+    The audit trail is a query log: an explicit JOIN..ON a user actually ran is
+    evidence two columns are related. Poisoning defenses: endpoints must exist
+    in the discovered schema of a *live* datasource (CTE/phantom/deleted-source
+    names are dropped), the authority signal is DISTINCT CALLERS rather than
+    raw execution count (one caller repeating a join 10,000x reads as strength
+    1), only the most recent audit rows are scanned, and — like every
+    non-structural source — nothing is authoritative until a human approves.
+    """
+    live = _schema_lookup(schemas)
+    counts: dict[tuple, int] = {}
+    callers: dict[tuple, set] = {}
+    with db.session() as s:
+        rows = (
+            s.query(db.AuditRow)
+            .filter(db.AuditRow.action == "query", db.AuditRow.success == True)  # noqa: E712
+            .order_by(db.AuditRow.id.desc())
+            .limit(_AUDIT_SCAN_LIMIT)
+            .all()
+        )
+    for r in rows:
+        sql = ((r.details or {}).get("request") or {}).get("sql")
+        if not sql or r.datasource_id not in live:
+            continue
+        tables = live[r.datasource_id]
+        for ta, col_a, tb, col_b in _joins_in_sql(str(sql)):
+            # exact name first, then the same singularized stem the lookup was
+            # built with ("customers" in SQL -> stem "customer" -> customers.csv)
+            ea = tables.get(ta.lower()) or tables.get(_table_stem(ta))
+            eb = tables.get(tb.lower()) or tables.get(_table_stem(tb))
+            if ea is None or eb is None:
+                continue  # CTE/derived/unknown table — not a real endpoint
+            can_a = ea[1].get(col_a.lower())
+            can_b = eb[1].get(col_b.lower())
+            if can_a is None or can_b is None:
+                continue
+            key = _undirected(r.datasource_id, ea[0], can_a, r.datasource_id, eb[0], can_b)
+            counts[key] = counts.get(key, 0) + 1
+            callers.setdefault(key, set()).add(r.api_key_id or "unknown")
+
+    out = []
+    for ((ds_a, tab_a, col_a), (ds_b, tab_b, col_b)), n in counts.items():
+        k = len(callers[((ds_a, tab_a, col_a), (ds_b, tab_b, col_b))])
+        out.append(
+            {
+                "from_datasource_id": ds_a,
+                "from_table": tab_a,
+                "from_column": col_a,
+                "to_datasource_id": ds_b,
+                "to_table": tab_b,
+                "to_column": col_b,
+                "kind": "candidate_join",
+                "source": "behavioral",
+                "confidence": 0.7,
+                "rationale": (
+                    f"JOIN..ON observed in {n} audited quer{'y' if n == 1 else 'ies'} "
+                    f"by {k} distinct caller{'s' if k != 1 else ''}"
+                ),
+            }
+        )
+    # Strongest evidence first (distinct callers, then volume) so a downstream
+    # cap keeps the best-supported candidates.
+    out.sort(key=lambda r: (-len(callers[_rel_undirected(r)]), r["rationale"]))
+    return out
+
+
 def _to_dict(r: db.RelationshipRow) -> dict[str, Any]:
     return {
         "id": r.id,

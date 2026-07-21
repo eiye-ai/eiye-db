@@ -53,6 +53,7 @@ export interface QueryResponse {
   pii_filtered: boolean;
   pii_counts: Record<string, number>;
   execution_time_ms: number;
+  lineage?: Record<string, unknown>;
 }
 
 export interface Metric {
