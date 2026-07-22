@@ -4,11 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from eiye_db.models import (
+    AskRequest,
     ConnectionStatus,
     DataSource,
     DataSourceType,
     PIIResult,
-    QueryRequest,
 )
 
 
@@ -39,21 +39,12 @@ def test_enum_str_yields_value():
     assert str(ConnectionStatus.CONNECTED) == "connected"
 
 
-def test_query_request_requires_query():
+def test_ask_request_bounds():
     with pytest.raises(ValidationError):
-        QueryRequest()
-
-
-def test_query_request_defaults():
-    q = QueryRequest(query="list customers")
-    assert q.include_pii is False
-    assert q.cache_enabled is True
-    assert q.datasource_ids is None
-
-
-def test_query_request_rejects_bad_response_format():
+        AskRequest(question="")
     with pytest.raises(ValidationError):
-        QueryRequest(query="q", response_format="natural-language")
+        AskRequest(question="q" * 501)
+    assert AskRequest(question="how many customers").limit == 100
 
 
 def test_pii_result_defaults():

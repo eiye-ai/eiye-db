@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     # Browser access (CORS). Comma-separated origins; defaults cover the Vite dev server.
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # NL → governed query. Deterministic matching is always on; the LLM assist
+    # (bootstraps metric selection + parameter drafting when determinism falls
+    # short) is opt-in, and its output must still pass the catalog's typed
+    # validation before anything executes. Requires the `nl` extra:
+    #   pip install -e ".[nl]"   and an Anthropic API key.
+    # DISCLOSURE: when enabled, question text and approved-metric metadata are
+    # sent to the Anthropic API (questions are not pre-redacted).
+    nl_llm_enabled: bool = False
+    nl_llm_model: str = "claude-opus-4-8"
+    anthropic_api_key: str | None = None  # falls back to the ANTHROPIC_API_KEY env var
+
     # Optional spaCy NER layer for name/location redaction (regex baseline always
     # runs). Off by default; when enabled the model must load or the first
     # redaction raises — never a silent fail-open. Requires the `ner` extra:

@@ -24,6 +24,10 @@ async def lifespan(_app: FastAPI):
         # Fail loud at boot if the NER model is missing, rather than 500-ing (or
         # worse, silently under-redacting) on the first query.
         pii._load_ner()
+    if settings.nl_llm_enabled:
+        from eiye_db import nl
+
+        nl.ensure_llm_ready()  # fail loud at boot, not on the first /semantic/ask
     yield
 
 

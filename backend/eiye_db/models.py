@@ -214,24 +214,9 @@ class SourceQueryResponse(BaseModel):
     lineage: dict[str, Any] = Field(default_factory=dict)
 
 
-class QueryRequest(BaseModel):
-    """Query request to the semantic surface."""
+class AskRequest(BaseModel):
+    """A natural-language question answered ONLY through approved metrics
+    (deterministic matching; optional LLM assist drafts, never executes)."""
 
-    query: str
-    datasource_ids: list[str] | None = None
-    response_format: Literal["structured", "natural_language", "raw"] = "structured"
-    include_pii: bool = False
-    cache_enabled: bool = True
-    timeout_seconds: int = 30
-
-
-class QueryResponse(BaseModel):
-    """Query response from the semantic surface."""
-
-    query: str
-    results: list[dict[str, Any]] = Field(default_factory=list)
-    datasource_ids_used: list[str] = Field(default_factory=list)
-    cache_hit: bool = False
-    pii_filtered: bool = False
-    execution_time_ms: float = 0.0
-    meta: dict[str, Any] = Field(default_factory=dict)
+    question: str = Field(min_length=1, max_length=500)
+    limit: int = Field(100, ge=1, le=1000)

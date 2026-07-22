@@ -6,6 +6,7 @@ from fastapi.responses import PlainTextResponse
 from eiye_db import audit, catalog, metrics, policy, registry, semantic, service
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import (
+    AskRequest,
     DataSource,
     DataSourceCreate,
     DataSourceUpdate,
@@ -252,6 +253,18 @@ async def metric_query(metric_id: str, req: MetricQuery, identity: Identity = De
         raise HTTPException(409, str(e))
     except catalog.CatalogError as e:
         raise HTTPException(400, str(e))
+    except policy.PolicyDenied as e:
+        raise HTTPException(403, str(e))
+    except ConnectorError as e:
+        raise HTTPException(502, str(e))
+    except TimeoutError:
+        raise HTTPException(504, "query timed out")
+
+
+@router.post("/semantic/ask")
+async def semantic_ask(req: AskRequest, identity: Identity = Depends(require_api_key)):
+    try:
+        return await service.ask(req.question, req.limit, identity.key_id, identity.is_admin)
     except policy.PolicyDenied as e:
         raise HTTPException(403, str(e))
     except ConnectorError as e:

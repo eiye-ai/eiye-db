@@ -127,6 +127,23 @@ def propose_metric(
 
 
 @mcp.tool()
+async def ask(question: str, limit: int = 100) -> dict[str, Any]:
+    """Answer a natural-language question through the GOVERNED metric catalog.
+    Prefer this over ad-hoc query_datasource when a metric may exist: answers
+    come only from approved metric definitions, so they are consistent across
+    callers and never improvised. Returns {"answered": true, result...} or
+    {"answered": false, "reason", "candidates": [closest metrics]} — on a
+    non-answer, call query_metric directly with one of the candidates, or
+    propose_metric to draft a new definition for human approval.
+    Questions are limited to 500 characters (rejected, not truncated — a
+    silent cut could drop or mangle a parameter binding)."""
+    question = str(question)
+    if len(question) > 500:
+        raise ValueError("question too long (max 500 characters)")
+    return await service.ask(question, min(max(limit, 1), 1000), MCP_KEY_ID)
+
+
+@mcp.tool()
 async def resolve_entities(
     left_datasource_id: str,
     left_request: dict[str, Any],
@@ -156,6 +173,10 @@ def main() -> None:
     db.configure()
     if settings.pii_ner_enabled:
         pii._load_ner()  # fail loud at boot if the NER model is missing
+    if settings.nl_llm_enabled:
+        from eiye_db import nl
+
+        nl.ensure_llm_ready()  # fail loud at boot, not on the first ask
     mcp.run()
 
 

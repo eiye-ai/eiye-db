@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, catalog, pii, policy, registry, resolution, semantic
+from eiye_db import audit, catalog, nl, pii, policy, registry, resolution, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -340,6 +340,112 @@ async def resolve_entities(
         },
         "lineage": {"left": results["left"].lineage, "right": results["right"].lineage},
     }
+
+
+def _metric_summary(m: dict[str, Any]) -> dict[str, Any]:
+    return {k: m[k] for k in ("id", "name", "description", "params")}
+
+
+async def ask(question: str, limit: int, key_id: str, is_admin: bool = False) -> dict[str, Any]:
+    """NL → governed query. Deterministic serving path: match the question
+    against approved (and policy-visible) metrics, extract parameters with
+    fixed patterns, execute through run_metric. When the deterministic path
+    falls short and EIYE_NL_LLM_ENABLED is on, an LLM drafts the metric
+    choice/parameters — but the draft still executes through the same typed
+    validation, policy checks, and audit as any caller-supplied request.
+
+    Never guesses: with no confident match (and no LLM), the answer is an
+    explicit non-answer listing the closest governed metrics.
+    """
+    from eiye_db.config import settings
+
+    question = str(question)[:500]
+    safe_question = pii.redact_text(question)[0]
+    visible = visible_datasource_ids(key_id, is_admin)
+    approved = [m for m in catalog.list_metrics(status="approved") if m["datasource_id"] in visible]
+    ranked = nl.rank(question, approved)
+    candidates = [_metric_summary(r["metric"]) for r in ranked[:5]]
+
+    chosen: dict[str, Any] | None = None
+    params: dict[str, Any] = {}
+    matcher = "deterministic"
+    no_answer_reason: str | None = None
+
+    if nl.confident(ranked):
+        top = ranked[0]["metric"]
+        extracted = nl.extract_params(question, top["params"])
+        missing = nl.missing_params(top, extracted)
+        if not missing:
+            chosen, params = top, extracted
+        else:
+            # Fallback reason if the LLM (when enabled) can't rescue this.
+            no_answer_reason = f"metric '{top['name']}' matches but needs parameters: {missing}"
+            candidates = [_metric_summary(top)]
+
+    if chosen is None and ranked and settings.nl_llm_enabled:
+        try:
+            draft = await nl.llm_bind(question, [r["metric"] for r in ranked[:5]])
+            outcome = "draft" if draft else "no-draft"
+        except Exception as e:  # LLM assist must fail closed to a non-answer, never a 500
+            draft, outcome = None, f"error:{type(e).__name__}"
+        # Calling llm_bind at all sends the question to the Anthropic API:
+        # the egress is audited on EVERY outcome, not just success/error — an
+        # operator must be able to reconstruct exactly which questions left.
+        audit.record(
+            "ask_llm", "semantic", "egress", key_id,
+            details={"question": safe_question, "outcome": outcome, "shortlist": len(ranked[:5])},
+            success=not outcome.startswith("error"),
+        )
+        if draft:
+            chosen = next(r["metric"] for r in ranked if r["metric"]["id"] == draft["metric_id"])
+            params = draft["params"]
+            matcher = "llm-assisted"
+
+    if chosen is None:
+        if no_answer_reason is None:
+            if not ranked:
+                no_answer_reason = "no approved metric matches this question"
+            elif len(ranked) == 1:
+                no_answer_reason = f"metric '{ranked[0]['metric']['name']}' matches only weakly — not executing"
+            else:
+                no_answer_reason = "no clear best match among the candidate metrics"
+        audit.record(
+            "ask", "semantic", "no-answer", key_id,
+            details={"question": safe_question, "reason": no_answer_reason, "candidates": len(candidates)},
+        )
+        return {"answered": False, "reason": no_answer_reason, "candidates": candidates}
+
+    try:
+        # Full governance chain: approved-only, typed param validation +
+        # injection allowlist, policy checks, redaction, audit — identical
+        # whether params came from patterns or the LLM.
+        executed = await run_metric(chosen["id"], params, limit, key_id, is_admin)
+    except (catalog.CatalogError, NotFoundError) as e:
+        # NotFoundError covers the delete race between rank and execution.
+        # Either way this ask completes as a structured non-answer — audited
+        # as an ask (with matcher disclosure), not just as a metric failure.
+        audit.record(
+            "ask", "semantic", chosen["id"], key_id, chosen["datasource_id"],
+            details={"question": safe_question, "matcher": matcher, "error": type(e).__name__}, success=False,
+        )
+        # Validation messages can echo caller/LLM-influenced text: cap + redact
+        # before re-serving, same posture as every other free-text response.
+        reason = pii.redact_text(str(e)[:300])[0] or "metric no longer exists"
+        return {"answered": False, "reason": reason, "candidates": [_metric_summary(chosen)]}
+    except (ConnectorError, TimeoutError, policy.PolicyDenied) as e:
+        # These keep their transport error contract (502/504/403) but the ask
+        # attempt itself is still traced.
+        audit.record(
+            "ask", "semantic", chosen["id"], key_id, chosen["datasource_id"],
+            details={"question": safe_question, "matcher": matcher, "error": type(e).__name__}, success=False,
+        )
+        raise
+    executed["result"]["lineage"]["nl"] = {"question": safe_question, "matcher": matcher, "metric": chosen["name"]}
+    audit.record(
+        "ask", "semantic", chosen["id"], key_id, chosen["datasource_id"],
+        details={"question": safe_question, "matcher": matcher, "metric": chosen["name"]},
+    )
+    return {"answered": True, "matcher": matcher, **executed}
 
 
 def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:

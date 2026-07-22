@@ -26,6 +26,9 @@ dependencies = [
 dev = ["pytest>=8.3.0", "ruff>=0.6.0"]
 # Name/location redaction. Also run: python -m spacy download en_core_web_sm
 ner = ["spacy>=3.7.0,<4.0.0"]
+# Optional LLM assist for NL->governed-query (EIYE_NL_LLM_ENABLED=true).
+# Floor: output_config (structured outputs) first appears in SDK 0.77.0.
+nl = ["anthropic>=0.77.0"]
 
 [project.scripts]
 eiye-db = "eiye_db.main:main"
