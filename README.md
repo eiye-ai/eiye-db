@@ -216,7 +216,8 @@ datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
 | Business | Up to 150 | 1M | $1,999/mo |
 | Enterprise | Unlimited | Custom | Contact sales |
 
-See GOALS.md for the full open-core breakdown.
+The Free tier is the Additional Use Grant in the [license](LICENSE), not a trial
+that expires. See GOALS.md for the licensing model and tier detail.
 
 ## Competitive Landscape
 
@@ -232,4 +233,22 @@ See GOALS.md for the full open-core breakdown.
 
 ## License
 
-Open-core: Apache-2.0 for OSS components (core surface, connectors, PII engine, ABAC, orchestration agent, UI); commercial license for enterprise features (advanced analytics, SSO, compliance reports, multi-tenant orchestration). See GOALS.md.
+**Source-available, not open source.** eiye_db is licensed under the
+[Business Source License 1.1](LICENSE). The full source is public and auditable —
+which matters for a governance control you are being asked to trust — but BSL is
+not an OSI-approved open source license, and we don't describe it as one.
+
+What the license grants you free of charge:
+
+- Copy, modify, redistribute, and use non-productively (evaluation, development, testing)
+- **Production use up to 5 registered datasources and 1,000 queries per calendar month**
+
+What requires a commercial license:
+
+- Production use beyond those limits (see the pricing tiers in `GOALS.md`)
+- Offering eiye_db to third parties as a hosted or managed service
+- Enterprise features: SSO, compliance reports, multi-tenant control plane, advanced analytics
+
+Each released version converts to **Apache-2.0 four years after publication**
+(Change Date `2030-08-30` for the current version), so nothing is permanently
+enclosed. Commercial licensing: max.goff@gmail.com.

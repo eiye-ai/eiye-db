@@ -34,7 +34,7 @@
   <main id="main">
     <section class="hero" id="top">
       <div class="wrap">
-        <p class="kicker">eiye.ai · semantic surface · Apache-2.0</p>
+        <p class="kicker">eiye.ai · semantic surface · source-available (BSL 1.1)</p>
         <h1>Agents query your sources.<br>PII does not leave the path.</h1>
         <p class="lede">Organizations want AI agents on existing data without copying a lake, standing up a warehouse, or leaking people. eiye is a pass-through governed query layer: register a source, discover schema, answer MCP or REST queries with redaction, access control, and audit on the way through.</p>
         <div class="cta-row">
@@ -44,7 +44,7 @@
         <dl class="spec-strip" aria-label="Product facts">
           <div><dt>Model</dt><dd>Pass-through</dd></div>
           <div><dt>Host</dt><dd>Self-hosted</dd></div>
-          <div><dt>License</dt><dd>Open-core Apache-2.0</dd></div>
+          <div><dt>License</dt><dd>Source-available (BSL 1.1)</dd></div>
           <div><dt>LLM</dt><dd>Not required</dd></div>
         </dl>
       </div>
@@ -61,7 +61,7 @@
             <ul>
               <li>A governed query layer so agents can reach existing sources without leaking PII</li>
               <li>Pass-through: data stays in the customer’s sources</li>
-              <li>Self-hosted open-core (Apache-2.0)</li>
+              <li>Self-hosted, source-available (BSL 1.1) — free up to 5 sources and 1,000 queries/month</li>
               <li>MCP tools: <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code> — or REST</li>
               <li>PII redaction, access control, and audit on every query</li>
               <li>Optional cache on the path back to the source</li>
@@ -141,7 +141,7 @@
               <li><span>Access</span> Real ABAC (API keys today)</li>
               <li><span>Conductor</span> Natural-language conductor</li>
             </ul>
-            <p class="quiet">Commercial extras (not the open core): SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
+            <p class="quiet">Commercial-license features: SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
           </article>
         </div>
       </div>
@@ -151,7 +151,7 @@
       <div class="wrap">
         <p class="section-n">04</p>
         <h2>Pricing</h2>
-        <p class="section-lead">Open core is free to run. Paid tiers raise datasource and query limits. Enterprise is custom.</p>
+        <p class="section-lead">Free to run up to 5 sources and 1,000 queries/month — that limit is the license grant itself, not a trial. Paid tiers raise it. Enterprise is custom.</p>
         <div class="table-wrap">
           <table class="pricing">
             <thead>
@@ -195,7 +195,7 @@
             </tbody>
           </table>
         </div>
-        <p class="pricing-note">Commercial extras: SSO, compliance reports, multi-tenant control plane, advanced analytics. <a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Ask about a commercial license</a>.</p>
+        <p class="pricing-note">The Free tier is a license grant, not just a limit: the <a href="https://github.com/maxgoff/eiye-db/blob/main/LICENSE">BSL 1.1</a> permits production use up to 5 datasources and 1,000 queries/month at no charge. Beyond that, or to offer eiye as a hosted service, requires a commercial license. Paid tiers also unlock SSO, compliance reports, multi-tenant control plane, and advanced analytics. <a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Ask about a commercial license</a>.</p>
       </div>
     </section>
 
@@ -236,8 +236,8 @@ scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
             <p>No. eiye does not require an LLM. Agents call MCP or REST. A natural-language conductor is on the roadmap and is labeled as such — it is not required to run the surface today.</p>
           </details>
           <details>
-            <summary>What is open-core vs commercial?</summary>
-            <p>The core surface is Apache-2.0: connectors, PII engine, access control, audit, MCP, REST, React console. Commercial extras: SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
+            <summary>What does source-available mean here?</summary>
+            <p>The full source is public and auditable — connectors, PII engine, access control, audit, MCP, REST, React console — but it is not open source in the OSI sense, and we do not call it that. eiye is licensed under the <a href="https://github.com/maxgoff/eiye-db/blob/main/LICENSE">Business Source License 1.1</a>: read it, run it, modify it, and use it in production free of charge up to 5 datasources and 1,000 queries per month. Larger production use, or offering eiye to third parties as a hosted service, requires a commercial license. Each release converts to Apache-2.0 four years after publication, so nothing is enclosed permanently.</p>
           </details>
           <details>
             <summary>How is PII handled?</summary>
@@ -258,7 +258,7 @@ scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
       <p>
         <a href="https://github.com/maxgoff/eiye-db">GitHub</a>
         · <a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Commercial inquiry</a>
-        · Apache-2.0 open core
+        · Source-available (BSL 1.1)
       </p>
     </div>
   </footer>
