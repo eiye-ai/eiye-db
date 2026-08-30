@@ -17,3 +17,6 @@ audit.log
 *.license
 *.key
 eiye-license-signing-key*
+
+# Local agent-tool config: machine-specific absolute paths, not portable.
+.codex/
