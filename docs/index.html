@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>eiye — governed query layer for AI agents</title>
+  <meta name="description" content="eiye is a self-hosted semantic surface. Agents query your existing sources over MCP or REST. PII is redacted. Data stays in place.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="mark" href="#top">eiye</a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+        <span></span><span></span>
+      </button>
+      <nav id="site-nav" class="nav" aria-label="Primary">
+        <a href="#what">What</a>
+        <a href="#flow">Flow</a>
+        <a href="#built">Built</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#start">Start</a>
+        <a href="#faq">FAQ</a>
+        <a class="nav-github" href="https://github.com/maxgoff/eiye-db">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap">
+        <p class="kicker">eiye.ai · semantic surface · Apache-2.0</p>
+        <h1>Agents query your sources.<br>PII does not leave the path.</h1>
+        <p class="lede">Organizations want AI agents on existing data without copying a lake, standing up a warehouse, or leaking people. eiye is a pass-through governed query layer: register a source, discover schema, answer MCP or REST queries with redaction, access control, and audit on the way through.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/maxgoff/eiye-db">Get started on GitHub</a>
+          <a class="btn btn-ghost" data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Commercial inquiry</a>
+        </div>
+        <dl class="spec-strip" aria-label="Product facts">
+          <div><dt>Model</dt><dd>Pass-through</dd></div>
+          <div><dt>Host</dt><dd>Self-hosted</dd></div>
+          <div><dt>License</dt><dd>Open-core Apache-2.0</dd></div>
+          <div><dt>LLM</dt><dd>Not required</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="section" id="what">
+      <div class="wrap">
+        <p class="section-n">01</p>
+        <h2>What it is. What it is not.</h2>
+        <p class="section-lead">eiye sits in front of data you already run. It is a semantic surface, not another place to put the data.</p>
+        <div class="split">
+          <article class="panel is">
+            <h3>Is</h3>
+            <ul>
+              <li>A governed query layer so agents can reach existing sources without leaking PII</li>
+              <li>Pass-through: data stays in the customer’s sources</li>
+              <li>Self-hosted open-core (Apache-2.0)</li>
+              <li>MCP tools: <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code> — or REST</li>
+              <li>PII redaction, access control, and audit on every query</li>
+              <li>Optional cache on the path back to the source</li>
+            </ul>
+          </article>
+          <article class="panel is-not">
+            <h3>Is not</h3>
+            <ul>
+              <li>A warehouse</li>
+              <li>ETL</li>
+              <li>A copy of your lake</li>
+              <li>BI dashboards</li>
+              <li>Email marketing</li>
+              <li>A hosted data plane that takes your records</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="flow">
+      <div class="wrap">
+        <p class="section-n">02</p>
+        <h2>How a query moves</h2>
+        <p class="section-lead">Nothing is extracted into eiye for safekeeping. The query walks this path and returns. The source remains the source of truth.</p>
+        <ol class="flow" aria-label="Query path">
+          <li>
+            <span class="flow-n">01</span>
+            <strong>Register source</strong>
+            <span>Postgres, a filesystem root, or a REST GET endpoint.</span>
+          </li>
+          <li>
+            <span class="flow-n">02</span>
+            <strong>Schema discovery</strong>
+            <span>eiye maps what the source will answer.</span>
+          </li>
+          <li>
+            <span class="flow-n">03</span>
+            <strong>Agent query</strong>
+            <span>MCP stdio or REST. Three tools. Read-only.</span>
+          </li>
+          <li>
+            <span class="flow-n">04</span>
+            <strong>Govern</strong>
+            <span>PII redaction + access control + audit.</span>
+          </li>
+          <li>
+            <span class="flow-n">05</span>
+            <strong>Optional cache</strong>
+            <span>Then through to the source. Data does not relocate.</span>
+          </li>
+        </ol>
+        <p class="flow-note">Path: register → discover → query → redact / ACL / audit → optional cache → source.</p>
+      </div>
+    </section>
+
+    <section class="section" id="built">
+      <div class="wrap">
+        <p class="section-n">03</p>
+        <h2>Built now. Labeled as roadmap.</h2>
+        <p class="section-lead">eiye does not require an LLM. Agents call tools. A natural-language conductor is planned; it is not in the product today.</p>
+        <div class="split split-uneven">
+          <article class="panel">
+            <h3>Built</h3>
+            <ul class="spec-list">
+              <li><span>Connectors</span> PostgreSQL · filesystem (CSV, text, PDF, XLSX) · REST GET</li>
+              <li><span>PII</span> Regex redaction; optional spaCy NER</li>
+              <li><span>Console</span> React</li>
+              <li><span>Auth</span> API keys</li>
+              <li><span>Agents</span> MCP stdio — <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code></li>
+            </ul>
+          </article>
+          <article class="panel dim">
+            <h3>Roadmap</h3>
+            <ul class="spec-list">
+              <li><span>Connectors</span> MySQL, MongoDB, Google Drive, Email (IMAP), GitHub/GitLab</li>
+              <li><span>Access</span> Real ABAC (API keys today)</li>
+              <li><span>Conductor</span> Natural-language conductor</li>
+            </ul>
+            <p class="quiet">Commercial extras (not the open core): SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pricing">
+      <div class="wrap">
+        <p class="section-n">04</p>
+        <h2>Pricing</h2>
+        <p class="section-lead">Open core is free to run. Paid tiers raise datasource and query limits. Enterprise is custom.</p>
+        <div class="table-wrap">
+          <table class="pricing">
+            <thead>
+              <tr>
+                <th scope="col">Tier</th>
+                <th scope="col">Datasources</th>
+                <th scope="col">Queries / mo</th>
+                <th scope="col">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Free</th>
+                <td>5</td>
+                <td>1,000</td>
+                <td><code>$0</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Starter</th>
+                <td>15</td>
+                <td>25,000</td>
+                <td><code>$99/mo</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Pro</th>
+                <td>50</td>
+                <td>250,000</td>
+                <td><code>$499/mo</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Business</th>
+                <td>150</td>
+                <td>1,000,000</td>
+                <td><code>$1,999/mo</code></td>
+              </tr>
+              <tr>
+                <th scope="row">Enterprise</th>
+                <td colspan="2">Custom limits, SSO, compliance reports, multi-tenant control plane, advanced analytics</td>
+                <td><a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Contact</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="pricing-note">Commercial extras: SSO, compliance reports, multi-tenant control plane, advanced analytics. <a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Ask about a commercial license</a>.</p>
+      </div>
+    </section>
+
+    <section class="section" id="start">
+      <div class="wrap">
+        <p class="section-n">05</p>
+        <h2>Get started</h2>
+        <p class="section-lead">Primary path is the repo. One script registers a source, discovers schema, runs a governed query, and prints the MCP connect command.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/maxgoff/eiye-db">Open github.com/maxgoff/eiye-db</a>
+        </div>
+        <pre class="code" tabindex="0"><code>git clone https://github.com/maxgoff/eiye-db.git
+cd eiye-db
+scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
+#   or:  --type postgresql --dsn postgresql://user:pass@host/db
+#   or:  --type rest_api    --url https://api.example.com</code></pre>
+        <p class="quiet">Connect an agent (from the README):</p>
+        <pre class="code" tabindex="0"><code>claude mcp add eiye-db -- /path/to/backend/.venv/bin/python -m eiye_db.mcp_server</code></pre>
+        <p class="quiet">Tools the agent gets: <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code> — read-only, PII-redacted, audited.</p>
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="wrap">
+        <p class="section-n">06</p>
+        <h2>FAQ</h2>
+        <div class="faq">
+          <details open>
+            <summary>Do you take our data?</summary>
+            <p>No. eiye is pass-through. Data stays in your sources. There is no warehouse, no ETL job, and no copy of the lake. You self-host it. Queries go to the source; redaction, access control, and audit sit on that path.</p>
+          </details>
+          <details>
+            <summary>Is this a warehouse, a catalog, or an ETL tool?</summary>
+            <p>No. Non-goals: ETL, warehouse, BI dashboards, email marketing. eiye is a governed query layer in front of systems you already operate.</p>
+          </details>
+          <details>
+            <summary>Do we need an LLM inside eiye?</summary>
+            <p>No. eiye does not require an LLM. Agents call MCP or REST. A natural-language conductor is on the roadmap and is labeled as such — it is not required to run the surface today.</p>
+          </details>
+          <details>
+            <summary>What is open-core vs commercial?</summary>
+            <p>The core surface is Apache-2.0: connectors, PII engine, access control, audit, MCP, REST, React console. Commercial extras: SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
+          </details>
+          <details>
+            <summary>How is PII handled?</summary>
+            <p>On the query path. Baseline redaction is regex. Optional spaCy NER for names and locations. Combined with access control and a recorded audit trail.</p>
+          </details>
+          <details>
+            <summary>What can we point it at today?</summary>
+            <p>PostgreSQL, a filesystem root (CSV, text, PDF, XLSX), and REST GET. That is what is built now — not a promise list.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p><strong>eiye</strong> · eiye.ai · self-hosted semantic surface</p>
+      <p>
+        <a href="https://github.com/maxgoff/eiye-db">GitHub</a>
+        · <a data-mailto="commercial" href="mailto:max.goff@gmail.com?subject=eiye%20commercial%20inquiry">Commercial inquiry</a>
+        · Apache-2.0 open core
+      </p>
+    </div>
+  </footer>
+
+  <script src="site.js"></script>
+</body>
+</html>
