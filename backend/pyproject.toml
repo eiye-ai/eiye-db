@@ -43,3 +43,15 @@ pythonpath = ["."]
 [tool.ruff]
 target-version = "py311"
 line-length = 120
+
+[tool.ruff.lint]
+# Pin the rule set explicitly rather than inheriting ruff's default selection,
+# which changes between releases: 0.15 defaults to E4/E7/E9/F, 0.16 widened it,
+# so identical code passed locally and failed CI on a newer ruff. Selecting
+# explicitly makes the gate mean the same thing on every machine, and widening
+# it a deliberate decision instead of a side effect of an upgrade.
+select = ["E4", "E7", "E9", "F"]
+# B008 (function call in argument default) can never be enabled here: FastAPI's
+# dependency injection *requires* `= Depends(...)` in the signature. It fires on
+# all 27 route handlers.
+ignore = ["B008"]
