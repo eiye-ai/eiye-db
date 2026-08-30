@@ -69,9 +69,20 @@ uvicorn eiye_db.main:app --reload
 > (the single source of truth).
 
 With no `EIYE_API_KEY` set, the API runs in open dev mode and the curls below
-work as written. To secure it, `export EIYE_API_KEY=<key>` (and optionally
-`EIYE_ADMIN_API_KEY` — only the admin key may request unredacted PII or read
-the audit log); then add `-H "X-API-Key: $EIYE_API_KEY"` to every request below.
+work as written. To secure it, `export EIYE_API_KEY=<key>` and
+`EIYE_ADMIN_API_KEY=<admin-key>`, then add `-H "X-API-Key: $EIYE_API_KEY"` to
+every request below.
+
+The two keys map onto two surfaces:
+
+| surface | key | serves |
+|---|---|---|
+| `/api/v1/datasources` | admin only | raw registrations, `config` included (Postgres DSNs, REST auth headers); create, update, delete, test |
+| `/api/v1/surface/sources` | any valid key | policy-filtered listing, `config` omitted |
+
+The admin key also gates unredacted PII, the audit log, policy management, and
+every curation step (approving relationships and metrics). So with keys set, the
+registration curls in step 2 take `$EIYE_ADMIN_API_KEY`; querying takes either.
 
 ### 2. Register the demo datasource and query it
 
@@ -165,7 +176,10 @@ datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
 - Backend on a different host/port? Set `VITE_PROXY_TARGET` (proxy) or
   `VITE_API_BASE` (direct, e.g. `http://host:8000/api/v1`) before `npm run dev`,
   and add that browser origin to `EIYE_CORS_ORIGINS` (comma-separated) for the backend.
-- If the backend has an API key set, paste it into the field in the UI header.
+- If the backend has keys set, paste the **admin** key into the field in the UI
+  header: the dashboard drives the operator surface (registrations, curation).
+  Since admins bypass ABAC, handing out UI access hands out full governance
+  authority — treat it as an operator console, not an agent-facing app.
 
 ## Datasource Connectors
 

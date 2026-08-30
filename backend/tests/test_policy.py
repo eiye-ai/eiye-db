@@ -304,6 +304,65 @@ def test_propose_is_not_an_existence_oracle(client, keys, tmp_path):
             service.propose_metric("m", "", target, {"path": "x"}, {}, "mcp-stdio")
 
 
+# --- the two-surface contract: raw registrations are admin-only ---
+
+
+def test_datasources_group_is_admin_only(client, keys, tmp_path):
+    """`/datasources` serves DataSource.config verbatim — a Postgres DSN with its
+    password, REST auth headers — and its mutations retarget or cascade-delete the
+    very ids policies are keyed on. Agents get `/surface/sources` instead."""
+    ds = _register_demo(client, tmp_path)
+    body = {"name": "other", "type": "filesystem", "config": {"root": str(tmp_path)}}
+    assert client.post("/api/v1/datasources", json=body, headers=PRIMARY).status_code == 403
+    assert client.get("/api/v1/datasources", headers=PRIMARY).status_code == 403
+    assert client.get(f"/api/v1/datasources/{ds['id']}", headers=PRIMARY).status_code == 403
+    assert client.put(f"/api/v1/datasources/{ds['id']}", json={"name": "x"}, headers=PRIMARY).status_code == 403
+    assert client.post(f"/api/v1/datasources/{ds['id']}/test", headers=PRIMARY).status_code == 403
+    assert client.delete(f"/api/v1/datasources/{ds['id']}", headers=PRIMARY).status_code == 403
+    # nothing was renamed, retargeted or cascaded away; admin keeps the full surface
+    assert client.get(f"/api/v1/datasources/{ds['id']}", headers=ADMIN).json()["name"] == "demo"
+    assert len(client.get("/api/v1/datasources", headers=ADMIN).json()) == 1
+
+
+def test_surface_sources_omits_config(client, keys, tmp_path):
+    """The agent-facing half of the contract: policy-filtered, and credentials
+    are not in the shape at all."""
+    _register_demo(client, tmp_path)
+    sources = client.get("/api/v1/surface/sources", headers=PRIMARY).json()
+    assert sources and all("config" not in s for s in sources)
+
+
+def test_schema_relationships_do_not_leak_denied_far_side(client, keys, tmp_path):
+    """A cross-source link names the counterpart's datasource, table and column.
+    `check_schema_access` gates the near side only, so the far side needs the
+    same visibility filter every other metadata listing applies."""
+    visible = _register_demo(client, tmp_path, name="visible")
+    hidden = _register_demo(client, tmp_path, name="hidden")
+    client.post("/api/v1/semantic/detect", headers=ADMIN)
+    all_rels = client.get("/api/v1/semantic/relationships", headers=ADMIN).json()
+    assert any(r["from_datasource_id"] != r["to_datasource_id"] for r in all_rels), "expected a cross-source candidate"
+
+    _deny_discover(hidden["id"])
+    rels = client.get(f"/api/v1/surface/schema/{visible['id']}", headers=PRIMARY).json()["relationships"]
+    assert all(hidden["id"] not in (r["from_datasource_id"], r["to_datasource_id"]) for r in rels)
+    # the near source's own links survive the filter — this is scoping, not blanking
+    assert rels
+    # admin still sees the whole picture
+    admin_rels = client.get(f"/api/v1/surface/schema/{visible['id']}", headers=ADMIN).json()["relationships"]
+    assert any(hidden["id"] in (r["from_datasource_id"], r["to_datasource_id"]) for r in admin_rels)
+
+
+def test_mcp_schema_relationships_do_not_leak_denied_far_side(client, keys, tmp_path):
+    from eiye_db import mcp_server
+
+    visible = _register_demo(client, tmp_path, name="visible")
+    hidden = _register_demo(client, tmp_path, name="hidden")
+    client.post("/api/v1/semantic/detect", headers=ADMIN)
+    _deny_discover(hidden["id"], subject="mcp-stdio")
+    rels = asyncio.run(mcp_server.get_schema(visible["id"]))["relationships"]
+    assert rels and all(hidden["id"] not in (r["from_datasource_id"], r["to_datasource_id"]) for r in rels)
+
+
 # --- masking hardening ---
 
 

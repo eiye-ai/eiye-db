@@ -50,7 +50,7 @@ async def get_schema(datasource_id: str) -> dict[str, Any]:
     schema = registry.get_schema(datasource_id)
     if schema is None:
         schema = await service.discover_schema(datasource_id, MCP_KEY_ID)
-    return {**schema, "relationships": service.relationships_for_schema(datasource_id)}
+    return {**schema, "relationships": service.relationships_for_schema(datasource_id, MCP_KEY_ID)}
 
 
 @mcp.tool()

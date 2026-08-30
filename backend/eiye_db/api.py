@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from eiye_db import audit, catalog, metrics, policy, registry, semantic, service
+from eiye_db import __version__, audit, catalog, metrics, policy, registry, semantic, service
+from eiye_db.config import settings
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import (
     AskRequest,
@@ -23,8 +24,27 @@ from eiye_db.security import Identity, require_api_key
 router = APIRouter(prefix="/api/v1")
 
 
+@router.get("/status")
+def status(identity: Identity = Depends(require_api_key)) -> dict:
+    """Build info for an authenticated caller. The unauthenticated liveness
+    probe is /health, on the app — this reports the version and debug flag, so
+    it belongs inside the authenticated prefix it is named for."""
+    return {
+        "app": settings.app_name,
+        "version": __version__,
+        "debug": settings.debug,
+    }
+
+
+# Registrations are operator state, not agent-facing surface: `config` carries
+# the connection secret (a Postgres DSN with its password, REST auth headers),
+# and update/delete retarget or cascade the datasource id that policies, metrics
+# and relationships are keyed on. The whole group is admin-only; agents read
+# /surface/sources, which is policy-filtered and omits config entirely.
 @router.post("/datasources", response_model=DataSource, status_code=201)
 def create_datasource(req: DataSourceCreate, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "registering a datasource requires the admin API key")
     try:
         ds = registry.create(req)
     except ValueError as e:
@@ -35,11 +55,15 @@ def create_datasource(req: DataSourceCreate, identity: Identity = Depends(requir
 
 @router.get("/datasources", response_model=list[DataSource])
 def list_datasources(identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "listing raw registrations requires the admin API key")
     return registry.list_all()
 
 
 @router.get("/datasources/{datasource_id}", response_model=DataSource)
 def get_datasource(datasource_id: str, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "reading a raw registration requires the admin API key")
     ds = registry.get(datasource_id)
     if ds is None:
         raise HTTPException(404, "datasource not found")
@@ -48,6 +72,8 @@ def get_datasource(datasource_id: str, identity: Identity = Depends(require_api_
 
 @router.put("/datasources/{datasource_id}", response_model=DataSource)
 def update_datasource(datasource_id: str, req: DataSourceUpdate, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "updating a datasource requires the admin API key")
     ds = registry.update(datasource_id, req)
     if ds is None:
         raise HTTPException(404, "datasource not found")
@@ -57,6 +83,8 @@ def update_datasource(datasource_id: str, req: DataSourceUpdate, identity: Ident
 
 @router.delete("/datasources/{datasource_id}", status_code=204)
 def delete_datasource(datasource_id: str, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "deleting a datasource requires the admin API key")
     if not registry.delete(datasource_id):
         raise HTTPException(404, "datasource not found")
     audit.record("delete", "datasource", datasource_id, identity.key_id, datasource_id)
@@ -64,6 +92,8 @@ def delete_datasource(datasource_id: str, identity: Identity = Depends(require_a
 
 @router.post("/datasources/{datasource_id}/test", response_model=DataSource)
 async def test_datasource(datasource_id: str, identity: Identity = Depends(require_api_key)):
+    if not identity.is_admin:
+        raise HTTPException(403, "testing a connection requires the admin API key")
     try:
         return await service.test_connection(datasource_id, identity.key_id)
     except service.NotFoundError:
@@ -116,7 +146,10 @@ def surface_schema(datasource_id: str, identity: Identity = Depends(require_api_
     schema = registry.get_schema(datasource_id)
     if schema is None:
         raise HTTPException(404, "no schema discovered yet; POST /datasources/{id}/discover first")
-    return {**schema, "relationships": service.relationships_for_schema(datasource_id)}
+    return {
+        **schema,
+        "relationships": service.relationships_for_schema(datasource_id, identity.key_id, identity.is_admin),
+    }
 
 
 @router.post("/semantic/detect")

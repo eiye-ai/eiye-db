@@ -448,14 +448,23 @@ async def ask(question: str, limit: int, key_id: str, is_admin: bool = False) ->
     return {"answered": True, "matcher": matcher, **executed}
 
 
-def relationships_for_schema(datasource_id: str) -> list[dict[str, Any]]:
+def relationships_for_schema(datasource_id: str, key_id: str, is_admin: bool = False) -> list[dict[str, Any]]:
     """Relationships to attach to a schema response: approved first, then candidates.
 
     Rejected links are excluded — an agent should never see them. Candidates are
     included but explicitly labeled so a client can distinguish ground truth
     from unreviewed proposals.
+
+    A cross-source link names the counterpart's datasource, table and column, so
+    the far endpoint is filtered against the same 'discover' visibility every
+    other metadata listing applies. The near endpoint is already gated by the
+    caller (check_schema_access), which is why this is not a second gate: the
+    denied source here is the *other* one.
     """
     rels = semantic.list_relationships(datasource_id=datasource_id)
+    if not is_admin:
+        visible = visible_datasource_ids(key_id)
+        rels = [r for r in rels if r["from_datasource_id"] in visible and r["to_datasource_id"] in visible]
     return [r for r in rels if r["status"] == "approved"] + [r for r in rels if r["status"] == "candidate"]
 
 

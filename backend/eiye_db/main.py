@@ -46,15 +46,6 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/v1/status")
-def status() -> dict:
-    return {
-        "app": settings.app_name,
-        "version": __version__,
-        "debug": settings.debug,
-    }
-
-
 def main() -> None:
     import uvicorn
 
