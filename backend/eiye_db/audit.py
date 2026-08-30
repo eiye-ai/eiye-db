@@ -31,6 +31,20 @@ def record(
         s.commit()
 
 
+def count_actions_since(actions: set[str], since: datetime) -> int:
+    """How many of these actions were recorded since `since`.
+
+    The audit trail is already a complete record of every access, so it doubles
+    as the usage meter — no second counter to drift out of sync with it.
+    """
+    with db.session() as s:
+        return (
+            s.query(db.AuditRow)
+            .filter(db.AuditRow.action.in_(actions), db.AuditRow.timestamp >= since)
+            .count()
+        )
+
+
 def recent(limit: int = 100) -> list[dict[str, Any]]:
     with db.session() as s:
         rows = s.query(db.AuditRow).order_by(db.AuditRow.id.desc()).limit(limit).all()

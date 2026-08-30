@@ -24,6 +24,12 @@ dependencies = [
     "pypdf>=5.0.0",
     "openpyxl>=3.1.0",
     "defusedxml>=0.7.1",
+    # Ed25519 verification for license files. Already present transitively, but
+    # declared because license.py imports it directly. The stdlib has no
+    # asymmetric signature primitive, and an HMAC scheme would require shipping
+    # the signing secret to every deployment — which is precisely what must not
+    # happen, since anyone holding it could mint licenses.
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]

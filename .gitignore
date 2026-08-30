@@ -11,3 +11,9 @@ dist/
 .DS_Store
 eiye.db
 audit.log
+
+# Licence artifacts: customer license files and any signing key material.
+# The Ed25519 private key must never enter this repository.
+*.license
+*.key
+eiye-license-signing-key*

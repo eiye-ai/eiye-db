@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi.encoders import jsonable_encoder
 
-from eiye_db import audit, catalog, nl, pii, policy, registry, resolution, semantic
+from eiye_db import audit, catalog, license, nl, pii, policy, registry, resolution, semantic
 from eiye_db.connectors import ConnectorError, get_connector
 from eiye_db.models import ConnectionStatus, DataSource, SourceQueryResponse
 
@@ -60,6 +60,67 @@ def _check_policy(action: str, ds_id: str, key_id: str, is_admin: bool) -> set[s
             details={"action": action, "reason": e.detail}, success=False,
         )
         raise
+
+
+# --- entitlements ---------------------------------------------------------
+#
+# Licence limits are NOT access control, and the two must not be confused: an
+# admin bypasses ABAC because they are the governor of their own data, but no
+# identity bypasses the licence, because nobody here is the licensor. Both
+# checks therefore live in the service layer, where REST and MCP share them.
+
+METERED_ACTIONS = {"query", "query_metric"}
+
+
+def _month_start() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def queries_this_month() -> int:
+    return audit.count_actions_since(METERED_ACTIONS, _month_start())
+
+
+def check_datasource_quota() -> None:
+    """Gate on registering another datasource. Refusing a *create* denies nobody
+    access to data they already have, so this one can be hard."""
+    ent = license.current()
+    if ent.degraded:
+        raise license.LicenseLimitExceeded(
+            "license expired: renew to register new datasources (existing sources keep serving)"
+        )
+    registered = len(registry.list_all())
+    if registered >= ent.max_datasources:
+        raise license.LicenseLimitExceeded(
+            f"licensed for {ent.max_datasources} datasources ({registered} registered)"
+        )
+
+
+def check_query_quota() -> None:
+    """Gate on the metered query volume.
+
+    Unlicensed deployments stop at the Additional Use Grant — going past it
+    would be unlicensed use, and the software should not help with that.
+    Licensed deployments are never taken offline mid-month: overage is recorded
+    once, for the true-up conversation, and the query proceeds.
+    """
+    ent = license.current()
+    used = queries_this_month()
+    if used < ent.max_queries_per_month:
+        return
+    if ent.licensed:
+        # `used` grows one per query, so this fires exactly once per month —
+        # on the first query past the cap — instead of once per overage query.
+        if used == ent.max_queries_per_month:
+            audit.record(
+                "license_overage", "license", ent.license_id or "unlicensed", None,
+                details={"limit": ent.max_queries_per_month, "tier": ent.tier},
+            )
+        return
+    raise license.LicenseLimitExceeded(
+        f"free tier allows {ent.max_queries_per_month} queries per month; "
+        "see LICENSE (Additional Use Grant) or upgrade"
+    )
 
 
 def _basis(is_admin: bool) -> str:
@@ -513,6 +574,10 @@ async def run_query(
     is_admin: bool = False,
 ) -> SourceQueryResponse:
     ds = _get_or_raise(datasource_id)
+    # Metered before the policy gate: a query the deployment is not licensed to
+    # run should not reach the connector, and a denied query should not consume
+    # quota. Both REST and MCP land here, so neither can route around it.
+    check_query_quota()
     masked = _check_policy("read", ds.id, key_id, is_admin)
     masked_lower = {m.lower() for m in masked}
     if masked_lower and isinstance(request.get("sql"), str):

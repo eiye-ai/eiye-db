@@ -252,3 +252,31 @@ What requires a commercial license:
 Each released version converts to **Apache-2.0 four years after publication**
 (Change Date `2030-08-30` for the current version), so nothing is permanently
 enclosed. Commercial licensing: max.goff@gmail.com.
+
+### Entitlements
+
+With no license file, eiye_db runs under the free grant above — 5 datasources,
+1,000 queries/month — and enforces it. A commercial license is a signed file:
+
+```bash
+export EIYE_LICENSE_FILE=/etc/eiye/acme.license
+```
+
+Verification is offline against a public key built into the binary; there is no
+phone-home, so air-gapped deployments work normally. `GET /api/v1/status` reports
+the active tier, limits, expiry and current usage.
+
+What happens at the boundary is deliberately asymmetric:
+
+| | Unlicensed (free grant) | Licensed |
+|---|---|---|
+| Datasource cap | hard stop at 5 | hard stop at your tier |
+| Query cap | hard stop at 1,000/mo | recorded as overage, **service continues** |
+| Expiry | n/a | 30-day grace, then no new registrations or commercial features |
+
+A paying customer is never taken offline mid-month by their own vendor — query
+overage is a true-up conversation, not an outage. And **expiry never severs
+access to what already exists**: existing sources keep serving, and the audit
+trail and semantic-model export stay readable regardless of license state. You
+may have a regulatory retention obligation against that audit log, and no
+billing dispute should be able to put you out of compliance.

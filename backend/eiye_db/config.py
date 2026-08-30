@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # local process can claim any id; stdio already trusts whoever spawned it.
     key_id: str = "mcp-stdio"
 
+    # Path to a signed licence file. Unset = the BSL Additional Use Grant (free
+    # tier: 5 datasources, 1,000 queries/month). If set but unusable, boot fails
+    # loudly rather than silently falling back to free-tier limits.
+    license_file: str | None = None
+
     # ABAC posture: False (default) = access allowed unless a policy denies it,
     # so a fresh install works with zero policies. True = every non-admin access
     # needs an explicit allow policy (hardened deployments).

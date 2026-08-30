@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 
-from eiye_db import __version__, audit, catalog, metrics, policy, registry, semantic, service
+from eiye_db import __version__, audit, catalog, license, metrics, policy, registry, semantic, service
 from eiye_db.config import settings
 from eiye_db.connectors import ConnectorError
 from eiye_db.models import (
@@ -33,6 +33,10 @@ def status(identity: Identity = Depends(require_api_key)) -> dict:
         "app": settings.app_name,
         "version": __version__,
         "debug": settings.debug,
+        # Entitlement state is disclosed to any authenticated caller, not just
+        # admins: an agent hitting a quota wall deserves to see why.
+        "license": license.current().summary(),
+        "usage": {"datasources": len(registry.list_all()), "queries_this_month": service.queries_this_month()},
     }
 
 
@@ -45,6 +49,9 @@ def status(identity: Identity = Depends(require_api_key)) -> dict:
 def create_datasource(req: DataSourceCreate, identity: Identity = Depends(require_api_key)):
     if not identity.is_admin:
         raise HTTPException(403, "registering a datasource requires the admin API key")
+    # Admin bypasses ABAC but not the licence: an admin governs their data, they
+    # do not license the software. LicenseLimitExceeded → 402 app-wide.
+    service.check_datasource_quota()
     try:
         ds = registry.create(req)
     except ValueError as e:

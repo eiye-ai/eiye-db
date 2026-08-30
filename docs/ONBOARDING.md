@@ -69,6 +69,7 @@ backend/eiye_db/
   audit.py         append-only audit trail
   pii.py           regex PII detection + recursive redaction (optional spaCy NER layer)
   policy.py        ABAC engine: allow/deny per source, column masking, subject/action scoping
+  license.py       entitlements: offline Ed25519 verification, tier limits, expiry ladder
   semantic.py      relationship detection (structural/heuristic/behavioral), governance, YAML
   catalog.py       metric catalog: typed params, injection-hostile substitution, approval gate
   resolution.py    entity resolution: normalization + tiered name matching (stdlib-only)
@@ -77,7 +78,7 @@ backend/eiye_db/
   connectors/      base.py + postgres.py, filesystem.py, rest.py; factory in __init__
   api.py           REST routes (/api/v1/...)
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (212 pass, 2 skipped); conftest gives fresh DB + client per test
+backend/tests/     pytest suite (227 pass, 2 skipped); conftest gives fresh DB + client per test
 frontend/          React + Vite UI: datasource management + "Semantic model" review view
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
@@ -105,7 +106,7 @@ agents directly, and all go through `service.py`.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 212 pass, 2 skipped (live-PG, see below)
+pytest -q                       # 227 pass, 2 skipped (live-PG, see below)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -145,7 +146,8 @@ high-severity:
    existing `audit_logs` table and Alembic is still backlog; promote it when
    migrations land.
 
-Two further governance rules are load-bearing for the semantic layer:
+Three further rules are load-bearing for the semantic layer and the commercial
+boundary:
 
 4. **ABAC enforcement.** Policies are **allow-by-default** (a fresh install works
    with zero policies); `EIYE_ABAC_DEFAULT_DENY=true` flips the posture. When
@@ -155,7 +157,21 @@ Two further governance rules are load-bearing for the semantic layer:
    are the governors), recorded as `basis="admin-bypass"`. Order: explicit deny >
    explicit allow > default. Open dev mode requires **both** keys unset; setting
    exactly one is refused at boot, so no gate here is silently vacuous.
-5. **Approved-only authority.** Only `status="approved"` relationships/metrics
+5. **Entitlements are not access control.** `license.py` gates on what the
+   *deployment* is licensed to do; ABAC gates on what a *subject* may see. Keep
+   them apart: an admin bypasses ABAC because they govern their own data, but
+   nobody bypasses the license, because nobody in the deployment is the
+   licensor. Both checks live in `service.py` so REST and MCP share them —
+   `check_query_quota` sits in `run_query` ahead of the policy gate, so a denied
+   query costs no quota and an agent gets no unmetered path. The free-tier
+   constants in `license.py` MUST equal the BSL Additional Use Grant in
+   `/LICENSE`; they are one boundary written twice, and the license wins.
+   Expiry degrades (no new registrations, no commercial features) but never
+   blocks existing sources, the audit trail, or export — a customer may have a
+   retention obligation against that log. It is measurement, not DRM: the source
+   is available, so the license is what binds, and this code only makes usage
+   visible.
+6. **Approved-only authority.** Only `status="approved"` relationships/metrics
    are authoritative to agents. Candidates are labeled hints; rejected links are
    never shown. Agents (holding the primary/MCP key) may *propose* but only an
    *admin* may approve. Structural FKs come from the source DB and can't be
@@ -230,7 +246,7 @@ rather than trusting it.
 ## Fastest path back to context after a reboot
 
 1. Read this file, then `git log --stat -8`.
-2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (212
+2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (227
    pass, 2 skipped) = the invariants above still hold.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
    backlog; `GOALS.md` has the vision and Semantic Layer Strategy section.
