@@ -68,10 +68,11 @@ uvicorn eiye_db.main:app --reload
 > launches from any directory, and it reads dependencies from `pyproject.toml`
 > (the single source of truth).
 
-With no `EIYE_API_KEY` set, the API runs in open dev mode and the curls below
-work as written. To secure it, `export EIYE_API_KEY=<key>` and
+With **no keys set**, the API runs in open dev mode and the curls below work as
+written. To secure it, set **both** `EIYE_API_KEY=<key>` and
 `EIYE_ADMIN_API_KEY=<admin-key>`, then add `-H "X-API-Key: $EIYE_API_KEY"` to
-every request below.
+every request below. Setting only one is refused at boot: a half-configured
+service looks secured and isn't, so it fails loudly instead of serving.
 
 The two keys map onto two surfaces:
 
@@ -120,7 +121,8 @@ export EIYE_PII_NER_ENABLED=true          # off by default; when on, the model m
 
 ```bash
 # Claude Code
-claude mcp add eiye-db -- /path/to/backend/.venv/bin/python -m eiye_db.mcp_server
+claude mcp add eiye-db --env EIYE_KEY_ID=support-agent \
+  -- /path/to/backend/.venv/bin/python -m eiye_db.mcp_server
 ```
 
 Or in Claude Desktop's `claude_desktop_config.json`:
@@ -130,14 +132,24 @@ Or in Claude Desktop's `claude_desktop_config.json`:
   "mcpServers": {
     "eiye-db": {
       "command": "/path/to/backend/.venv/bin/python",
-      "args": ["-m", "eiye_db.mcp_server"]
+      "args": ["-m", "eiye_db.mcp_server"],
+      "env": { "EIYE_KEY_ID": "support-agent" }
     }
   }
 }
 ```
 
-The agent gets three tools — `list_datasources`, `get_schema`,
-`query_datasource` — all read-only, PII-redacted, and audited.
+`EIYE_KEY_ID` (default `mcp-stdio`) names the principal the server runs as: its
+ABAC subject and its identity in the audit trail. Give each agent its own so
+policies can target it and the trail can tell them apart. It is **not a
+credential** — any local process can claim any id — which is acceptable only
+because stdio MCP already trusts whoever spawned the process. Do not treat it
+as authentication.
+
+The agent gets nine tools — `list_datasources`, `get_schema`, `query_datasource`,
+`list_metrics`, `query_metric`, `resolve_entities`, `ask`, and the draft-only
+`propose_relationship` / `propose_metric` — all read-only, PII-redacted, and
+audited.
 
 `get_schema` also returns **relationships** (joins): `"approved"` ones are
 governed ground truth (e.g. real foreign keys); `"candidate"` ones are detected

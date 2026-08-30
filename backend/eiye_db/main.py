@@ -12,6 +12,14 @@ from eiye_db.config import settings
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Refuse the half-configured state before doing any setup work: an operator
+    # who set one key believes the service is secured, and a warning they may
+    # never read is not enough to correct that belief.
+    if (settings.api_key is None) != (settings.admin_api_key is None):
+        raise RuntimeError(
+            "partially configured auth: set both EIYE_API_KEY and EIYE_ADMIN_API_KEY, "
+            "or neither (open dev mode). Setting only one leaves the other role unreachable."
+        )
     db.configure()
     if settings.api_key is None:
         import logging

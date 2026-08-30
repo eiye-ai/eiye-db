@@ -62,11 +62,20 @@ def _check_policy(action: str, ds_id: str, key_id: str, is_admin: bool) -> set[s
         raise
 
 
+def _basis(is_admin: bool) -> str:
+    """Why an access was permitted. Admins bypass ABAC entirely (policy.check
+    returns before evaluating any row), so without this the trail cannot tell
+    'a policy allowed this' apart from 'nobody asked policy'."""
+    return "admin-bypass" if is_admin else "policy"
+
+
 def check_schema_access(datasource_id: str, key_id: str, is_admin: bool = False) -> None:
     """Gate for reading an already-discovered schema (REST surface + MCP)."""
     _check_policy("discover", datasource_id, key_id, is_admin)
     # Schema reads are access too: audited like queries, not just their denials.
-    audit.record("read_schema", "datasource", datasource_id, key_id, datasource_id)
+    audit.record(
+        "read_schema", "datasource", datasource_id, key_id, datasource_id, details={"basis": _basis(is_admin)}
+    )
 
 
 def visible_datasource_ids(key_id: str, is_admin: bool = False) -> set[str]:
@@ -97,7 +106,8 @@ async def discover_schema(datasource_id: str, key_id: str, is_admin: bool = Fals
     # Structural FKs are the source's own metadata: auto-approved ground truth.
     semantic.sync_structural(ds.id, fks)
     audit.record(
-        "discover_schema", "datasource", ds.id, key_id, ds.id, details={"tables": len(tables), "foreign_keys": len(fks)}
+        "discover_schema", "datasource", ds.id, key_id, ds.id,
+        details={"tables": len(tables), "foreign_keys": len(fks), "basis": _basis(is_admin)},
     )
     return schema
 
@@ -166,7 +176,9 @@ async def run_metric(
         metric_id,
         key_id,
         metric["datasource_id"],
-        details={"name": metric["name"], "params": safe_params, "rows": result.row_count},
+        details={
+            "name": metric["name"], "params": safe_params, "rows": result.row_count, "basis": _basis(is_admin)
+        },
     )
     return {
         # Redacted params in the envelope too — one consistent redaction posture
@@ -326,7 +338,7 @@ async def resolve_entities(
         by_confidence[m["confidence"]] = by_confidence.get(m["confidence"], 0) + 1
     audit.record(
         "resolve_entities", "semantic", resource_id, key_id,
-        details={**safe_details, "matches": by_confidence},
+        details={**safe_details, "matches": by_confidence, "basis": _basis(is_admin)},
     )
     return {
         "matches": matches,
@@ -572,6 +584,7 @@ async def run_query(
             "pii_redactions": sum(pii_counts.values()),
             "pii_counts": pii_counts,
             "include_pii": include_pii,
+            "basis": _basis(is_admin),
         },
     )
     return response

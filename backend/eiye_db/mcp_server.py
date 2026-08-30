@@ -15,7 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from eiye_db import catalog, db, pii, registry, service
 from eiye_db.config import settings
 
-MCP_KEY_ID = "mcp-stdio"
+MCP_KEY_ID = settings.key_id
 
 mcp = FastMCP("eiye_db")
 

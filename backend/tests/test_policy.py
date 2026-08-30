@@ -363,6 +363,44 @@ def test_mcp_schema_relationships_do_not_leak_denied_far_side(client, keys, tmp_
     assert rels and all(hidden["id"] not in (r["from_datasource_id"], r["to_datasource_id"]) for r in rels)
 
 
+def test_mcp_principal_is_the_configured_key_id(client, keys, tmp_path):
+    """The MCP subject comes from config (EIYE_KEY_ID), so policies can target a
+    named agent. It is not a credential — stdio already trusts whoever spawned
+    the process — but it restores per-agent ABAC scoping and audit attribution."""
+    from eiye_db import mcp_server
+    from eiye_db.config import settings
+
+    assert mcp_server.MCP_KEY_ID == settings.key_id == "mcp-stdio"
+
+
+# --- audit: why was this permitted? ---
+
+
+def test_audit_records_basis_of_every_permit(client, keys, tmp_path):
+    """Admins bypass ABAC entirely (policy.check returns before evaluating), so
+    an allow in the trail must distinguish 'a policy permitted this' from
+    'nobody asked policy'."""
+    from eiye_db import audit
+
+    ds = _register_demo(client, tmp_path)
+    body = {"datasource_id": ds["id"], "request": {"path": "customers.csv"}}
+
+    assert client.post("/api/v1/query", json=body, headers=PRIMARY).status_code == 200
+    assert _latest(audit, "query")["details"]["basis"] == "policy"
+    assert client.post("/api/v1/query", json=body, headers=ADMIN).status_code == 200
+    assert _latest(audit, "query")["details"]["basis"] == "admin-bypass"
+
+    # the same distinction on the metadata paths
+    client.get(f"/api/v1/surface/schema/{ds['id']}", headers=PRIMARY)
+    assert _latest(audit, "read_schema")["details"]["basis"] == "policy"
+    client.post(f"/api/v1/datasources/{ds['id']}/discover", headers=ADMIN)
+    assert _latest(audit, "discover_schema")["details"]["basis"] == "admin-bypass"
+
+
+def _latest(audit, action):
+    return next(a for a in audit.recent(50) if a["action"] == action)
+
+
 # --- masking hardening ---
 
 

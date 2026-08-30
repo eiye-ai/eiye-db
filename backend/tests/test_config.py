@@ -24,3 +24,11 @@ def test_unprefixed_env_ignored(monkeypatch):
     monkeypatch.setenv("PORT", "1234")
     s = Settings(_env_file=None)
     assert s.port == 8000
+
+
+def test_key_id_is_configurable(monkeypatch):
+    """EIYE_KEY_ID names the MCP principal, so each agent can be a distinct ABAC
+    subject and audit identity."""
+    assert Settings(_env_file=None).key_id == "mcp-stdio"
+    monkeypatch.setenv("EIYE_KEY_ID", "support-agent")
+    assert Settings(_env_file=None).key_id == "support-agent"

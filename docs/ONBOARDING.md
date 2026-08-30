@@ -64,8 +64,8 @@ backend/eiye_db/
                    metrics, policies, audit_logs
   registry.py      datasource CRUD; delete cascades relationships/metrics/policies
   service.py       ** the governance chain — shared by REST and MCP; every access path **
-  security.py      API-key auth (dev mode when unset; admin key gates raw PII, curation,
-                   policy management, and the raw /datasources registration surface)
+  security.py      API-key auth (dev mode only when BOTH keys unset; admin key gates raw
+                   PII, curation, policies, and the raw /datasources registration surface)
   audit.py         append-only audit trail
   pii.py           regex PII detection + recursive redaction (optional spaCy NER layer)
   policy.py        ABAC engine: allow/deny per source, column masking, subject/action scoping
@@ -77,15 +77,17 @@ backend/eiye_db/
   connectors/      base.py + postgres.py, filesystem.py, rest.py; factory in __init__
   api.py           REST routes (/api/v1/...)
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (206 pass, 2 skipped); conftest gives fresh DB + client per test
+backend/tests/     pytest suite (212 pass, 2 skipped); conftest gives fresh DB + client per test
 frontend/          React + Vite UI: datasource management + "Semantic model" review view
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
 scripts/                quickstart.{py,sh}, seed_example_policies.py, mcp_dogfood.sh
+.github/workflows/ci.yml  pytest + ruff on a 3.11/3.12 matrix
 ```
 
-There is **no `.github/` yet** — CI is on the near-term list, so pytest and ruff
-are run by hand for now. Do not assume a gate you did not see run.
+CI runs pytest and ruff, nothing more. It is regression protection, not an
+authorization check: the route-auth audit found real defects while this exact
+gate was green. Live-PG tests skip in CI (no `EIYE_TEST_PG_DSN`).
 
 ### The 9 MCP tools (what an agent sees)
 
@@ -103,8 +105,8 @@ agents directly, and all go through `service.py`.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 206 pass, 2 skipped (live-PG, see below)
-ruff check .                    # keep it clean — this is the bar CI will gate on
+pytest -q                       # 212 pass, 2 skipped (live-PG, see below)
+ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
 ```
@@ -137,7 +139,11 @@ high-severity:
    column names, and NL question text.
 3. **Audit trail.** Every create/test/discover/query/propose/review/resolve/ask,
    including failures and policy denials, is recorded. `GET /api/v1/audit` is
-   admin-gated.
+   admin-gated. Permitted accesses carry `details.basis` — `"policy"` (ABAC was
+   consulted and allowed) vs `"admin-bypass"` (nobody asked policy). It lives in
+   the JSON `details`, not a column, because `create_all` cannot `ALTER` an
+   existing `audit_logs` table and Alembic is still backlog; promote it when
+   migrations land.
 
 Two further governance rules are load-bearing for the semantic layer:
 
@@ -146,7 +152,9 @@ Two further governance rules are load-bearing for the semantic layer:
    policies exist they are enforced on every data *and metadata* path — masked
    columns are dropped before redaction; denied sources vanish from schema,
    export, listings, and the propose_\* existence oracle. Admin bypasses (admins
-   are the governors). Order: explicit deny > explicit allow > default.
+   are the governors), recorded as `basis="admin-bypass"`. Order: explicit deny >
+   explicit allow > default. Open dev mode requires **both** keys unset; setting
+   exactly one is refused at boot, so no gate here is silently vacuous.
 5. **Approved-only authority.** Only `status="approved"` relationships/metrics
    are authoritative to agents. Candidates are labeled hints; rejected links are
    never shown. Agents (holding the primary/MCP key) may *propose* but only an
@@ -222,7 +230,7 @@ rather than trusting it.
 ## Fastest path back to context after a reboot
 
 1. Read this file, then `git log --stat -8`.
-2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (206
+2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (212
    pass, 2 skipped) = the invariants above still hold.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
    backlog; `GOALS.md` has the vision and Semantic Layer Strategy section.

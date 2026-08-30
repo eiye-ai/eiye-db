@@ -15,9 +15,17 @@ class Settings(BaseSettings):
     # Metadata store (registry + audit)
     database_url: str = "sqlite:///./eiye.db"
 
-    # Governance: unset api_key = open dev mode; admin key may view raw PII
+    # Governance: both keys unset = open dev mode; admin key may view raw PII.
+    # Setting exactly one is refused at boot (see main.lifespan) — a half-secured
+    # service is worse than an obviously open one.
     api_key: str | None = None
     admin_api_key: str | None = None
+
+    # The principal the stdio MCP server runs as: its ABAC subject and audit
+    # identity. Set EIYE_KEY_ID per agent in the MCP client's launch env to give
+    # each one a distinct, policy-targetable identity. NOT a credential — any
+    # local process can claim any id; stdio already trusts whoever spawned it.
+    key_id: str = "mcp-stdio"
 
     # ABAC posture: False (default) = access allowed unless a policy denies it,
     # so a fresh install works with zero policies. True = every non-admin access
