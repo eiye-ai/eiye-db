@@ -51,7 +51,8 @@ _NER_LABELS = {"PERSON": "name", "GPE": "location", "LOC": "location", "FAC": "l
 @lru_cache(maxsize=1)
 def _load_ner():
     # Only the NER pipe is needed; disabling the rest speeds inference several-fold.
-    # Raises (OSError) loudly if the model isn't installed — never a silent fail-open.
+    # Raises loudly if unusable — never a silent fail-open: OSError when the model
+    # isn't installed, ImportError when the optional `ner` extra isn't.
     import spacy
 
     return spacy.load(settings.pii_ner_model, disable=["tagger", "parser", "lemmatizer", "attribute_ruler"])

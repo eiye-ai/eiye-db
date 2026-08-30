@@ -110,12 +110,16 @@ def test_ner_redacts_person_and_location(ner_on):
     assert counts["name"] == 1 and counts["location"] == 1 and counts["email"] == 1
 
 
-def test_ner_enabled_but_model_missing_fails_loud(monkeypatch):
-    # Enabled + a model that can't load must raise, never silently leave PII in.
+def test_ner_enabled_but_unusable_fails_loud(monkeypatch):
+    # Enabled + unusable must raise, never silently leave PII in. Two distinct
+    # causes, same requirement: the model isn't installed (spaCy raises OSError)
+    # or spaCy itself isn't (ImportError, the shape CI runs in — the `ner` extra
+    # is optional). Asserting both keeps this invariant covered where the other
+    # NER tests skip.
     pii._load_ner.cache_clear()
     monkeypatch.setattr(settings, "pii_ner_enabled", True)
     monkeypatch.setattr(settings, "pii_ner_model", "does_not_exist_model_xyz")
-    with pytest.raises(OSError):
+    with pytest.raises((OSError, ImportError)):
         pii.redact_entities("Alice Johnson called from Boston")
     pii._load_ner.cache_clear()
 
