@@ -1,4 +1,4 @@
-const CONTACT_EMAIL = 'max.goff@gmail.com';
+const CONTACT_EMAIL = 'max@decillion.us';
 
 function commercialMailto() {
   const subject = encodeURIComponent('eiye commercial inquiry');
