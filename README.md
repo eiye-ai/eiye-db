@@ -211,9 +211,9 @@ datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
 | Tier | Datasources | Queries/mo | Price |
 |------|-------------|------------|-------|
 | Free | Up to 5 | 1,000 | $0 |
-| Starter | Up to 15 | 25,000 | $99/mo |
-| Pro | Up to 50 | 250,000 | $499/mo |
-| Business | Up to 150 | 1M | $1,999/mo |
+| Starter | Up to 15 | 25,000 | $100/mo |
+| Pro | Up to 50 | 250,000 | $500/mo |
+| Business | Up to 150 | 1M | $2,000/mo |
 | Enterprise | Unlimited | Custom | Contact sales |
 
 The Free tier is the Additional Use Grant in the [license](LICENSE), not a trial
