@@ -258,7 +258,7 @@ so there is no `msodbcsql18` system package to install.
 | Enterprise | Unlimited | Custom | Contact sales |
 
 The Free tier is the Additional Use Grant in the [license](LICENSE), not a trial
-that expires. See GOALS.md for the licensing model and tier detail.
+that expires.
 
 ## Competitive Landscape
 
@@ -286,7 +286,7 @@ What the license grants you free of charge:
 
 What requires a commercial license:
 
-- Production use beyond those limits (see the pricing tiers in `GOALS.md`)
+- Production use beyond those limits (see the pricing tiers above)
 - Offering eiye_db to third parties as a hosted or managed service
 - Enterprise features: SSO, compliance reports, multi-tenant control plane, advanced analytics
 

@@ -20,3 +20,10 @@ eiye-license-signing-key*
 
 # Local agent-tool config: machine-specific absolute paths, not portable.
 .codex/
+
+# Planning docs: edited locally, never committed or pushed — the policy
+# docs/ONBOARDING.md already states. Listed here rather than in
+# .git/info/exclude (where AUTH_HARDENING.md and research-report.md live) so
+# the rule survives a fresh clone instead of protecting only this machine.
+GOALS.md
+TODO.md
