@@ -185,6 +185,13 @@ code {
   background: transparent;
 }
 .btn-ghost:hover { border-color: var(--amber); color: var(--amber); }
+.btn-compact {
+  padding: 0.38rem 0.7rem;
+  font-size: 0.78rem;
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
 
 .spec-strip {
   display: grid;
@@ -349,7 +356,7 @@ code {
   text-align: left;
   padding: 0.85rem 1rem;
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 .pricing thead th {
   font-family: var(--mono);
@@ -370,6 +377,7 @@ code {
   font-size: 0.95rem;
   color: var(--ink);
 }
+.pricing .btn { text-decoration: none; }
 .pricing-note { margin-top: 1.1rem; color: var(--muted); }
 
 .code {
