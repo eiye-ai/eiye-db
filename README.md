@@ -251,7 +251,7 @@ What requires a commercial license:
 
 Each released version converts to **Apache-2.0 four years after publication**
 (Change Date `2030-08-30` for the current version), so nothing is permanently
-enclosed. Commercial licensing: max@decillion.us.
+enclosed. Commercial licensing: max@eiye.ai.
 
 ### Entitlements
 
