@@ -12,30 +12,21 @@ def _utcnow() -> datetime:
 
 
 class DataSourceType(StrEnum):
+    """Types that have a working connector — nothing else.
+
+    This enum is the register-time contract: `get_connector` must implement
+    every member, so an unimplemented type is rejected by request validation
+    (422) instead of registering successfully and failing later at test/query
+    time. Add a member in the same change that adds its connector.
+    """
+
     POSTGRESQL = "postgresql"
+    # MySQL and MariaDB share this one member: MariaDB is a dialect, not a
+    # second SKU, and the connector is tested against both.
     MYSQL = "mysql"
-    MONGODB = "mongodb"
-    SQLITE = "sqlite"
+    SQLSERVER = "sqlserver"
     FILE_SYSTEM = "filesystem"
-    GOOGLE_DRIVE = "google_drive"
     REST_API = "rest_api"
-    EMAIL_IMAP = "email_imap"
-    EMAIL_EXCHANGE = "email_exchange"
-    GITHUB = "github"
-    GITLAB = "gitlab"
-    ELASTICSEARCH = "elasticsearch"
-    WEAVIATE = "weaviate"
-    PINECONE = "pinecone"
-    CSV = "csv"
-    PDF = "pdf"
-    WORD = "word"
-    CRM_SALESFORCE = "crm_salesforce"
-    CRM_HUBSPOT = "crm_hubspot"
-    ERP_SAP = "erp_sap"
-    ERP_NETSUITE = "erp_netsuite"
-    MCP_SERVER = "mcp_server"
-    WEB_SEARCH = "web_search"
-    LOGS = "logs"
 
 
 class ConnectionStatus(StrEnum):

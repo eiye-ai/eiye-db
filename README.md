@@ -182,7 +182,7 @@ npm run dev
 
 Open **http://localhost:5173**. The dev server proxies `/api` to the backend on
 `localhost:8000`, so no extra configuration is needed. Use **+ New** to register a
-datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
+datasource (filesystem / PostgreSQL / MySQL / SQL Server / REST API), then **Test connection**,
 **Discover schema**, and **Run query** to see redacted results.
 
 - Backend on a different host/port? Set `VITE_PROXY_TARGET` (proxy) or
@@ -198,13 +198,54 @@ datasource (filesystem / PostgreSQL / REST API), then **Test connection**,
 | Connector | Type | Status |
 |-----------|------|--------|
 | PostgreSQL | SQL DB | ✅ Available (read-only transactions) |
+| MySQL / MariaDB | SQL DB | ✅ Available (requires a login with no write privileges — see below) |
+| SQL Server | SQL DB | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
 | File System | Files (CSV, text, PDF, XLSX) | ✅ Available (root-scoped, schema inference, PII-redacted) |
 | REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
-| MySQL | SQL DB | Planned |
-| MongoDB | NoSQL | Planned |
-| Google Drive | Cloud Storage | Planned |
-| Email (IMAP) | Email | Planned |
-| GitHub/GitLab | Repositories | Planned |
+
+Drivers for connectors beyond the original three ship as extras, so a deployment
+installs only what it connects to:
+
+```bash
+pip install -e "backend[mysql]"
+```
+
+### MySQL / MariaDB needs a read-only login
+
+Postgres gives us a server-enforced read-only transaction that also covers DDL.
+**MySQL does not.** `START TRANSACTION READ ONLY` rejects INSERT/UPDATE/DELETE, but
+CREATE, DROP, TRUNCATE and GRANT all execute inside one — verified against MySQL 8.4
+and MariaDB 11.8. So the connector refuses to connect at all unless the login it is
+given provably cannot write, and it re-checks on every connection:
+
+```sql
+CREATE USER 'eiye'@'%' IDENTIFIED BY '...';
+GRANT SELECT ON mydb.* TO 'eiye'@'%';
+```
+
+Register it with `mysql://eiye:...@host:3306/mydb` (`mariadb://` also accepted). Point
+it at a write-capable account and `test` fails with an explanation rather than
+connecting and hoping. One type covers both engines; both are exercised in CI.
+
+### SQL Server needs a read-only login too, and relies on it more
+
+SQL Server has **no read-only transaction at all** — not even the partial one MySQL
+offers. On top of that, TDS transmits multi-statement batches and no driver setting
+disables it, so the query-wrapping trick that helps on the other engines cannot be
+relied on here either. The login is therefore close to the whole guarantee, and the
+connector refuses anything that can write: `sysadmin`, `db_owner`, or any database
+permission outside a small read-only allowlist.
+
+```sql
+CREATE LOGIN eiye WITH PASSWORD = '...';
+CREATE USER eiye FOR LOGIN eiye;
+ALTER ROLE db_datareader ADD MEMBER eiye;
+```
+
+Register it with `sqlserver://eiye:...@host:1433/mydb` (`mssql://` also accepted).
+A database in `READ_ONLY` state is accepted regardless of grants. SQL auth only —
+not SSPI, not Azure AD. `pip install -e "backend[mssql]"`; pymssql bundles FreeTDS,
+so there is no `msodbcsql18` system package to install.
 
 ## Pricing Tiers
 

@@ -69,7 +69,7 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
     });
 
   function buildRequest(): Record<string, unknown> | null {
-    if (source.type === "postgresql") {
+    if (source.type === "postgresql" || source.type === "mysql" || source.type === "sqlserver") {
       if (!sql.trim()) {
         setMsg({ kind: "err", text: "Enter a SQL query." });
         return null;
@@ -175,7 +175,7 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
         <h3>
           Query <span className="hint">read-only · PII redacted · audited</span>
         </h3>
-        {source.type === "postgresql" ? (
+        {source.type === "postgresql" || source.type === "mysql" || source.type === "sqlserver" ? (
           <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={3} placeholder="SELECT * FROM customers" />
         ) : source.type === "filesystem" ? (
           <div className="row">

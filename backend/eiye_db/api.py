@@ -5,7 +5,7 @@ from fastapi.responses import PlainTextResponse
 
 from eiye_db import __version__, audit, catalog, license, metrics, policy, registry, semantic, service
 from eiye_db.config import settings
-from eiye_db.connectors import ConnectorError
+from eiye_db.connectors import ConnectorError, require_driver
 from eiye_db.models import (
     AskRequest,
     DataSource,
@@ -52,6 +52,14 @@ def create_datasource(req: DataSourceCreate, identity: Identity = Depends(requir
     # Admin bypasses ABAC but not the licence: an admin governs their data, they
     # do not license the software. LicenseLimitExceeded → 402 app-wide.
     service.check_datasource_quota()
+    # Fail here rather than at first query: an unimplemented type is already
+    # rejected by DataSourceType validation, but an implemented one whose
+    # optional driver was never installed would otherwise register cleanly and
+    # break later, far from the cause.
+    try:
+        require_driver(req.type)
+    except ConnectorError as e:
+        raise HTTPException(400, str(e))
     try:
         ds = registry.create(req)
     except ValueError as e:

@@ -34,6 +34,18 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3.0", "ruff>=0.6.0"]
+# MySQL / MariaDB. PyMySQL rather than aiomysql, and the choice is a security
+# one, not a style one: aiomysql ORs CLIENT_MULTI_STATEMENTS into every
+# connection (connection.py:253) with no way to turn it off, which lets a
+# caller close the connector's LIMIT-wrapper paren and append `; DROP TABLE`.
+# Confirmed against MySQL 8.4 and MariaDB 11.8 — the table was dropped.
+# PyMySQL leaves the flag off, so the same input is a syntax error. It is
+# synchronous, so the connector runs it in asyncio.to_thread.
+mysql = ["pymysql>=1.1.0"]
+# SQL Server. pymssql bundles FreeTDS in its wheels, so there is no msodbcsql18
+# OS-level install for self-hosters or CI — which pyodbc would require. SQL auth
+# only, which is the supported scope. Synchronous, so it runs in to_thread.
+mssql = ["pymssql>=2.3.0"]
 # Name/location redaction. Also run: python -m spacy download en_core_web_sm
 ner = ["spacy>=3.7.0,<4.0.0"]
 # Optional LLM assist for NL->governed-query (EIYE_NL_LLM_ENABLED=true).

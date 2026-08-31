@@ -15,6 +15,43 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    # Both servers, one job, different ports. The MySQL connector's read-only
+    # guarantee is not something unit tests can assert — START TRANSACTION READ
+    # ONLY not covering DDL, and the driver refusing multi-statement, are
+    # server behaviours. And "MariaDB is a dialect, not a second SKU" is only
+    # honest if something exercises MariaDB.
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: eiye
+          MYSQL_DATABASE: t
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -peiye"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: eiye
+          MARIADB_DATABASE: t
+        ports: ["3307:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      # Runs natively here. It cannot run locally on Apple Silicon — the amd64
+      # image dies under emulation with "Invalid mapping of address ... in
+      # reserved address space" — so developers use ARM-native Azure SQL Edge
+      # and this job is the authoritative check against the real engine.
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "eiyeTest!2026"
+          MSSQL_PID: Developer
+        ports: ["1433:1433"]
+
     steps:
       - uses: actions/checkout@v7
 
@@ -24,14 +61,44 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
 
-      # The [dev] extra pulls pytest + ruff; httpx (TestClient) is a runtime dep.
+      # [dev] pulls pytest + ruff; [mysql] pulls the connector's driver, which
+      # is an optional extra so a deployment installs only what it connects to.
+      # httpx (TestClient) is a runtime dep.
       - name: Install
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,mysql,mssql]"
 
       - name: Lint
         run: ruff check .
 
-      # The two live-Postgres tests skip without EIYE_TEST_PG_DSN, so a green
-      # run here does not exercise the Postgres connector against a real server.
+      # SQL Server only ships the `master` database, and it takes tens of
+      # seconds to accept logins. Poll rather than guess a sleep; the MySQL and
+      # MariaDB images create their database from env and have health checks,
+      # so only this one needs the step.
+      - name: Create the SQL Server test database
+        run: |
+          python - <<'PY'
+          import time
+
+          import pymssql
+
+          for _attempt in range(36):
+              try:
+                  conn = pymssql.connect(server="127.0.0.1", user="sa", password="eiyeTest!2026", autocommit=True)
+                  break
+              except pymssql.Error:
+                  time.sleep(5)
+          else:
+              raise SystemExit("SQL Server never became reachable")
+          conn.cursor().execute("IF DB_ID('eiyetest') IS NULL CREATE DATABASE eiyetest")
+          conn.close()
+          PY
+
+      # MySQL, MariaDB and SQL Server run against the service containers above.
+      # The live Postgres tests still skip — EIYE_TEST_PG_DSN is unset — so a
+      # green run does not exercise the Postgres connector against a real server.
       - name: Test
+        env:
+          EIYE_TEST_MYSQL_DSN: mysql://root:eiye@127.0.0.1:3306/t
+          EIYE_TEST_MARIADB_DSN: mysql://root:eiye@127.0.0.1:3307/t
+          EIYE_TEST_MSSQL_DSN: sqlserver://sa:eiyeTest%212026@127.0.0.1:1433/eiyetest
         run: pytest -q

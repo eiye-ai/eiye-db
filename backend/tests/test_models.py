@@ -31,7 +31,7 @@ def test_datasource_accepts_type_string_coercion():
 
 def test_datasource_rejects_bad_pii_risk_level():
     with pytest.raises(ValidationError):
-        DataSource(name="x", type=DataSourceType.CSV, pii_risk_level="High")
+        DataSource(name="x", type=DataSourceType.FILE_SYSTEM, pii_risk_level="High")
 
 
 def test_enum_str_yields_value():
@@ -55,7 +55,7 @@ def test_pii_result_defaults():
 
 
 def test_mutable_defaults_not_shared():
-    a = DataSource(name="a", type=DataSourceType.CSV)
-    b = DataSource(name="b", type=DataSourceType.CSV)
+    a = DataSource(name="a", type=DataSourceType.FILE_SYSTEM)
+    b = DataSource(name="b", type=DataSourceType.FILE_SYSTEM)
     a.tags.append("x")
     assert b.tags == []

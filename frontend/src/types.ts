@@ -1,4 +1,4 @@
-export type DataSourceType = "filesystem" | "postgresql" | "rest_api";
+export type DataSourceType = "filesystem" | "postgresql" | "mysql" | "sqlserver" | "rest_api";
 
 export interface DataSource {
   id: string;
@@ -70,5 +70,7 @@ export interface Metric {
 export const TYPE_LABELS: Record<DataSourceType, string> = {
   filesystem: "Filesystem",
   postgresql: "PostgreSQL",
+  mysql: "MySQL / MariaDB",
+  sqlserver: "SQL Server",
   rest_api: "REST API",
 };

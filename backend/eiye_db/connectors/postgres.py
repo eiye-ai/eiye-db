@@ -5,6 +5,7 @@ from typing import Any
 import asyncpg
 
 from eiye_db.connectors.base import Connector, ConnectorError
+from eiye_db.connectors.sql import rows_to_tables
 
 _SCHEMA_SQL = """
 SELECT table_name, column_name, data_type
@@ -38,22 +39,6 @@ JOIN pg_attribute a ON a.attrelid = c.conrelid  AND a.attnum = ck.attnum
 JOIN pg_attribute b ON b.attrelid = c.confrelid AND b.attnum = cf.attnum
 WHERE c.contype = 'f' AND n.nspname = 'public'
 """
-
-
-def rows_to_tables(columns: list[tuple], pks: set[tuple], fk_cols: set[tuple] | None = None) -> list[dict[str, Any]]:
-    """Group (table, column, type) rows into the connector schema shape."""
-    fk_cols = fk_cols or set()
-    tables: dict[str, list[dict[str, Any]]] = {}
-    for table, column, dtype in columns:
-        tables.setdefault(table, []).append(
-            {
-                "name": column,
-                "type": dtype,
-                "is_primary_key": (table, column) in pks,
-                "is_foreign_key": (table, column) in fk_cols,
-            }
-        )
-    return [{"name": name, "fields": fields} for name, fields in tables.items()]
 
 
 def fk_rows_to_relationships(rows: list[tuple]) -> list[dict[str, Any]]:

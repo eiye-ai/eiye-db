@@ -52,3 +52,23 @@ def test_unknown_404(client):
 def test_invalid_type_422(client):
     resp = client.post("/api/v1/datasources", json={"name": "x", "type": "fax_machine"})
     assert resp.status_code == 422
+
+
+def test_unimplemented_types_rejected_at_register(client):
+    # These used to be accepted by DataSourceType and then blow up in
+    # get_connector at test/query time. Registering must fail up front, so
+    # the enum can only ever advertise types that actually run.
+    for type in ("mongodb", "google_drive", "github", "csv", "mcp_server", "sqlite"):
+        resp = client.post("/api/v1/datasources", json={"name": type, "type": type})
+        assert resp.status_code == 422, type
+    assert client.get("/api/v1/datasources").json() == []
+
+
+def test_implemented_type_registers(client):
+    # The other half of the contract: a type is in the enum only once its
+    # connector runs, so every enum member must be registrable.
+    resp = client.post(
+        "/api/v1/datasources",
+        json={"name": "db", "type": "mysql", "config": {"dsn": "mysql://u:p@h:3306/db"}},
+    )
+    assert resp.status_code == 201

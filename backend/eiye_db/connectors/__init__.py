@@ -1,9 +1,33 @@
 """Connector factory."""
 
+import importlib.util
+
 from eiye_db.connectors.base import Connector, ConnectorError
 from eiye_db.models import DataSourceType
 
-__all__ = ["Connector", "ConnectorError", "get_connector"]
+__all__ = ["Connector", "ConnectorError", "get_connector", "require_driver"]
+
+# Connectors whose driver ships as an optional extra, so a deployment installs
+# only what it actually connects to: {type: (import name, extra name)}.
+_OPTIONAL_DRIVERS = {
+    DataSourceType.MYSQL: ("pymysql", "mysql"),
+    DataSourceType.SQLSERVER: ("pymssql", "mssql"),
+}
+
+
+def require_driver(type: DataSourceType) -> None:
+    """Raise if this connector's optional driver is not installed.
+
+    Called at register so a missing driver is reported once, with the exact
+    install command, rather than surfacing as an ImportError later on the query
+    path. `find_spec` avoids importing the driver just to ask whether it exists.
+    """
+    optional = _OPTIONAL_DRIVERS.get(type)
+    if optional is None:
+        return
+    module, extra = optional
+    if importlib.util.find_spec(module) is None:
+        raise ConnectorError(f"the {type} connector needs an optional driver: pip install 'eiye-db[{extra}]'")
 
 
 def get_connector(type: DataSourceType, config: dict) -> Connector:
@@ -11,6 +35,16 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.postgres import PostgresConnector
 
         return PostgresConnector(config)
+    if type == DataSourceType.MYSQL:
+        require_driver(type)
+        from eiye_db.connectors.mysql import MySQLConnector
+
+        return MySQLConnector(config)
+    if type == DataSourceType.SQLSERVER:
+        require_driver(type)
+        from eiye_db.connectors.mssql import SQLServerConnector
+
+        return SQLServerConnector(config)
     if type == DataSourceType.FILE_SYSTEM:
         from eiye_db.connectors.filesystem import FilesystemConnector
 

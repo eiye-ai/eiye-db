@@ -24,7 +24,7 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
 
   function buildConfig(): Record<string, unknown> | null {
     if (type === "filesystem") return { root: root.trim() };
-    if (type === "postgresql") return { dsn: dsn.trim() };
+    if (type === "postgresql" || type === "mysql" || type === "sqlserver") return { dsn: dsn.trim() };
     const cfg: Record<string, unknown> = { base_url: baseUrl.trim() };
     if (headers.trim()) {
       try {
@@ -97,6 +97,32 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
             placeholder="postgresql://user:pass@host:5432/db"
           />
           <span className="hint">Queries run in read-only transactions.</span>
+        </label>
+      )}
+
+      {type === "mysql" && (
+        <label>
+          Connection string (DSN)
+          <input value={dsn} onChange={(e) => setDsn(e.target.value)} placeholder="mysql://user:pass@host:3306/db" />
+          <span className="hint">
+            MySQL or MariaDB. Must be a login with no write privileges — eiye refuses to connect otherwise, because a
+            MySQL read-only transaction does not stop DDL.
+          </span>
+        </label>
+      )}
+
+      {type === "sqlserver" && (
+        <label>
+          Connection string (DSN)
+          <input
+            value={dsn}
+            onChange={(e) => setDsn(e.target.value)}
+            placeholder="sqlserver://user:pass@host:1433/db"
+          />
+          <span className="hint">
+            SQL auth only. Must be a login with no write permissions — SQL Server has no read-only transaction, so the
+            login is the only thing holding, and eiye refuses to connect without it.
+          </span>
         </label>
       )}
 
