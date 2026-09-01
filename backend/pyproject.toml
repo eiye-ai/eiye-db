@@ -46,6 +46,12 @@ mysql = ["pymysql>=1.1.0"]
 # OS-level install for self-hosters or CI — which pyodbc would require. SQL auth
 # only, which is the supported scope. Synchronous, so it runs in to_thread.
 mssql = ["pymssql>=2.3.0"]
+# S3-compatible object storage. boto3 rather than signing requests by hand:
+# SigV4 is ~80 lines of code that has to be exactly right, and boto3 is also
+# what makes the same connector work against MinIO by setting endpoint_url.
+# Synchronous, so it runs in to_thread. SQLite needs no extra — sqlite3 is
+# stdlib, and its read-only mode is a flag on the open, not a driver feature.
+s3 = ["boto3>=1.35.0"]
 # Name/location redaction. Also run: python -m spacy download en_core_web_sm
 ner = ["spacy>=3.7.0,<4.0.0"]
 # Optional LLM assist for NL->governed-query (EIYE_NL_LLM_ENABLED=true).

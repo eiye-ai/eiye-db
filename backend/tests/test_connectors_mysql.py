@@ -17,10 +17,11 @@ import os
 import pytest
 
 from eiye_db.connectors.base import ConnectorError
-from eiye_db.connectors.mysql import MySQLConnector
 from eiye_db.connectors.sql import require_select
 
 pymysql = pytest.importorskip("pymysql")
+
+from eiye_db.connectors.mysql import MySQLConnector  # noqa: E402  (after importorskip)
 
 
 # --- pure, no server ---------------------------------------------------------

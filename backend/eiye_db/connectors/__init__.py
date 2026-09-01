@@ -12,6 +12,7 @@ __all__ = ["Connector", "ConnectorError", "get_connector", "require_driver"]
 _OPTIONAL_DRIVERS = {
     DataSourceType.MYSQL: ("pymysql", "mysql"),
     DataSourceType.SQLSERVER: ("pymssql", "mssql"),
+    DataSourceType.S3: ("boto3", "s3"),
 }
 
 
@@ -45,10 +46,19 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.mssql import SQLServerConnector
 
         return SQLServerConnector(config)
+    if type == DataSourceType.SQLITE:
+        from eiye_db.connectors.sqlite import SQLiteConnector
+
+        return SQLiteConnector(config)
     if type == DataSourceType.FILE_SYSTEM:
         from eiye_db.connectors.filesystem import FilesystemConnector
 
         return FilesystemConnector(config)
+    if type == DataSourceType.S3:
+        require_driver(type)
+        from eiye_db.connectors.s3 import S3Connector
+
+        return S3Connector(config)
     if type == DataSourceType.REST_API:
         from eiye_db.connectors.rest import RestConnector
 

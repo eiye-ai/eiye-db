@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { DataSource, QueryResponse, Schema } from "../types";
-import { TYPE_LABELS } from "../types";
+import { TYPE_LABELS, isObjectStore, isSql } from "../types";
 
 interface Props {
   source: DataSource;
@@ -69,19 +69,21 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
     });
 
   function buildRequest(): Record<string, unknown> | null {
-    if (source.type === "postgresql" || source.type === "mysql" || source.type === "sqlserver") {
+    if (isSql(source.type)) {
       if (!sql.trim()) {
         setMsg({ kind: "err", text: "Enter a SQL query." });
         return null;
       }
       return { sql: sql.trim() };
     }
-    const p = (source.type === "filesystem" ? table || path : path).trim();
+    const p = (isObjectStore(source.type) ? table || path : path).trim();
     if (!p) {
-      setMsg({ kind: "err", text: "Enter a path to query." });
+      setMsg({ kind: "err", text: source.type === "s3" ? "Enter an object key." : "Enter a path to query." });
       return null;
     }
-    return { path: p };
+    // S3 keys are opaque strings resolved against the configured prefix, not
+    // paths resolved against a root, so the connector names the field `key`.
+    return source.type === "s3" ? { key: p } : { path: p };
   }
 
   const runQuery = () =>
@@ -175,9 +177,9 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
         <h3>
           Query <span className="hint">read-only · PII redacted · audited</span>
         </h3>
-        {source.type === "postgresql" || source.type === "mysql" || source.type === "sqlserver" ? (
+        {isSql(source.type) ? (
           <textarea value={sql} onChange={(e) => setSql(e.target.value)} rows={3} placeholder="SELECT * FROM customers" />
-        ) : source.type === "filesystem" ? (
+        ) : isObjectStore(source.type) ? (
           <div className="row">
             {schema && schema.tables.length > 0 && (
               <select
@@ -187,7 +189,7 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
                   setPath("");
                 }}
               >
-                <option value="">— pick a file —</option>
+                <option value="">{source.type === "s3" ? "— pick an object —" : "— pick a file —"}</option>
                 {schema.tables.map((t) => (
                   <option key={t.name} value={t.name}>
                     {t.name}
@@ -201,7 +203,7 @@ export default function DataSourcePanel({ source, onChanged, onEdit, onDeleted }
                 setPath(e.target.value);
                 setTable("");
               }}
-              placeholder="or type a relative path"
+              placeholder={source.type === "s3" ? "or type a key under the prefix" : "or type a relative path"}
             />
           </div>
         ) : (

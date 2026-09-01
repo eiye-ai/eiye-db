@@ -1,4 +1,11 @@
-export type DataSourceType = "filesystem" | "postgresql" | "mysql" | "sqlserver" | "rest_api";
+export type DataSourceType =
+  | "filesystem"
+  | "postgresql"
+  | "mysql"
+  | "sqlserver"
+  | "sqlite"
+  | "s3"
+  | "rest_api";
 
 export interface DataSource {
   id: string;
@@ -72,5 +79,19 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
   postgresql: "PostgreSQL",
   mysql: "MySQL / MariaDB",
   sqlserver: "SQL Server",
+  sqlite: "SQLite",
+  s3: "S3 / MinIO",
   rest_api: "REST API",
 };
+
+// What a source is queried *with*, which is not the same question as what it
+// is. Both groups have more than one member now, so asking by group keeps the
+// next connector from having to be added to four `||` chains.
+const SQL_TYPES: DataSourceType[] = ["postgresql", "mysql", "sqlserver", "sqlite"];
+const OBJECT_TYPES: DataSourceType[] = ["filesystem", "s3"];
+
+/** Queried with SQL text. */
+export const isSql = (type: DataSourceType) => SQL_TYPES.includes(type);
+
+/** Queried by naming one document out of a discovered listing. */
+export const isObjectStore = (type: DataSourceType) => OBJECT_TYPES.includes(type);

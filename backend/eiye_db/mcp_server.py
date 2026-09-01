@@ -59,8 +59,9 @@ async def query_datasource(
 ) -> dict[str, Any]:
     """Run a read-only query against a datasource. PII in results is always
     redacted. `request` is connector-specific:
-    postgresql: {"sql": "SELECT ..."} (runs in a read-only transaction) ·
+    postgresql / mysql / sqlserver / sqlite: {"sql": "SELECT ..."} ·
     filesystem: {"path": "relative/file.csv"} ·
+    s3: {"key": "object/key.csv"} (relative to the configured prefix) ·
     rest_api: {"path": "/endpoint", "params": {...}} (GET only)."""
     result = await service.run_query(
         datasource_id, request, min(max(limit, 1), 1000), MCP_KEY_ID

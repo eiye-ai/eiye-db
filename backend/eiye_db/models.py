@@ -25,7 +25,11 @@ class DataSourceType(StrEnum):
     # second SKU, and the connector is tested against both.
     MYSQL = "mysql"
     SQLSERVER = "sqlserver"
+    SQLITE = "sqlite"
     FILE_SYSTEM = "filesystem"
+    # AWS S3, MinIO, and anything else speaking the S3 API. One member, because
+    # the difference is an endpoint URL, not a protocol.
+    S3 = "s3"
     REST_API = "rest_api"
 
 
@@ -181,7 +185,8 @@ class ResolveRequest(BaseModel):
 
 class SourceQueryRequest(BaseModel):
     """A source-scoped query. `request` is connector-specific:
-    postgres: {"sql": "SELECT ..."} · filesystem: {"path": "rel/file.csv"} ·
+    postgresql / mysql / sqlserver / sqlite: {"sql": "SELECT ..."} ·
+    filesystem: {"path": "rel/file.csv"} · s3: {"key": "rel/object.csv"} ·
     rest_api: {"path": "/endpoint", "params": {...}}."""
 
     datasource_id: str
