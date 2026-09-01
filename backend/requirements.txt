@@ -1,3 +1,6 @@
+# Mirrors [project.dependencies] in pyproject.toml, which is the source of
+# truth — pyproject carries the reasoning for each pin. Keep them in step: this
+# file drifted once already and the documented onboarding install broke.
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pydantic>=2.9.0
@@ -5,7 +8,14 @@ pydantic-settings>=2.6.0
 sqlalchemy>=2.0.36
 asyncpg>=0.30.0
 httpx>=0.27.2
-mcp>=1.0.0
+# Capped at v1: mcp 2.x renamed FastMCP to MCPServer, so mcp_server.py does not
+# import under it and the suite dies at collection. pyproject has carried this
+# cap since 8c506a1; this file did not, so `pip install -r requirements-dev.txt`
+# — the install ONBOARDING.md tells you to run — installed 2.x and broke.
+mcp>=1.0.0,<2
 pypdf>=5.0.0
 openpyxl>=3.1.0
 defusedxml>=0.7.1
+# license.py imports this directly; present transitively, but declared because
+# it is used directly.
+cryptography>=42.0.0

@@ -3,7 +3,12 @@
 #
 #   scripts/quickstart.sh --name notes --type filesystem  --root ~/Documents/exports
 #   scripts/quickstart.sh --name db    --type postgresql  --dsn postgresql://user:pass@host/db
-#   scripts/quickstart.sh --name api   --type rest_api     --url https://api.example.com
+#   scripts/quickstart.sh --name app   --type sqlite      --path ~/app.db
+#   scripts/quickstart.sh --name files --type s3          --bucket my-exports
+#   scripts/quickstart.sh --name api   --type rest_api    --url https://api.example.com
+#
+# --help lists every type; connectors with an optional driver (mysql, sqlserver,
+# s3) also need their extra: pip install -e "backend[mysql]".
 #
 # Creates backend/.venv and editable-installs eiye_db on first run, then hands off
 # to scripts/quickstart.py (register -> discover -> governed query -> connect an agent).

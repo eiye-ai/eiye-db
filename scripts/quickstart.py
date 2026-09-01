@@ -9,7 +9,16 @@ metadata store -- no server or port required for this walkthrough.
 Examples:
   quickstart.py --name notes --type filesystem  --root ~/Documents/exports
   quickstart.py --name warehouse --type postgresql --dsn postgresql://user:pass@host/db
+  quickstart.py --name app --type sqlite --path ~/app.db
+  quickstart.py --name reports --type mysql --dsn mysql://eiye:pass@host:3306/db
+  quickstart.py --name exports --type s3 --bucket my-exports   # AWS_* env for credentials
   quickstart.py --name api --type rest_api --url https://api.example.com
+
+Anything the shorthand flags do not cover goes in --config as JSON, which is
+merged over them:
+
+  quickstart.py --name minio --type s3 --bucket b \
+    --config '{"endpoint_url": "http://127.0.0.1:9000", "prefix": "exports/"}'
 
 Run it via scripts/quickstart.sh, which sets up the venv + editable install for you.
 """
@@ -26,8 +35,8 @@ BACKEND = REPO / "backend"
 
 try:
     from eiye_db import audit, db, registry, service
-    from eiye_db.connectors import ConnectorError
-    from eiye_db.models import DataSourceCreate
+    from eiye_db.connectors import ConnectorError, require_driver
+    from eiye_db.models import DataSourceCreate, DataSourceType
 except ModuleNotFoundError:
     sys.exit(
         "eiye_db is not importable. Run via scripts/quickstart.sh, or set up the venv:\n"
@@ -38,26 +47,57 @@ except ModuleNotFoundError:
 KEY_ID = "quickstart"
 
 
+def _abspath(value: str) -> str:
+    return str(Path(value).expanduser().resolve())
+
+
+# The one flag each type cannot be registered without, as {type: (flag, config
+# key, coercion)}. Everything else about a source goes through --config, which
+# keeps this table from growing a column per connector option.
+#
+# Covering every DataSourceType is asserted by backend/tests/test_quickstart.py.
+# It is checked rather than trusted because this script silently fell behind the
+# enum twice: MySQL and SQL Server shipped, then SQLite and S3, and --type kept
+# offering the same three choices it always had.
+SHORTHAND: dict[str, tuple[str, str, object]] = {
+    "filesystem": ("root", "root", _abspath),
+    "sqlite": ("path", "path", _abspath),
+    "postgresql": ("dsn", "dsn", None),
+    "mysql": ("dsn", "dsn", None),
+    "sqlserver": ("dsn", "dsn", None),
+    "s3": ("bucket", "bucket", None),
+    "rest_api": ("url", "base_url", None),
+}
+
+# How each connector names the thing a query addresses. Mirrors the shapes in
+# models.SourceQueryRequest; keep the two in step.
+SQL_TYPES = {"postgresql", "mysql", "sqlserver", "sqlite"}
+
+
 def build_config(args: argparse.Namespace) -> dict:
-    if args.type == "filesystem":
-        if not args.root:
-            sys.exit("--root is required for --type filesystem")
-        return {"root": str(Path(args.root).expanduser().resolve())}
-    if args.type == "postgresql":
-        if not args.dsn:
-            sys.exit("--dsn is required for --type postgresql")
-        return {"dsn": args.dsn}
-    if args.type == "rest_api":
-        if not args.url:
-            sys.exit("--url is required for --type rest_api")
-        return {"base_url": args.url}
-    sys.exit(f"unsupported type: {args.type}")
+    flag, key, coerce = SHORTHAND[args.type]
+    try:
+        extra = json.loads(args.config) if args.config else {}
+    except json.JSONDecodeError as e:
+        sys.exit(f"--config is not valid JSON: {e}")
+    if not isinstance(extra, dict):
+        sys.exit("--config must be a JSON object")
+
+    value = getattr(args, flag)
+    if not value and key not in extra:
+        sys.exit(f"--{flag} is required for --type {args.type} (or supply {key!r} in --config)")
+    config = {key: coerce(value) if coerce else value} if value else {}
+    return {**config, **extra}
 
 
 def sample_request(dtype: str, table: str) -> dict:
     """A reasonable read-only query for the first discovered table."""
-    if dtype == "postgresql":
+    if dtype in SQL_TYPES:
         return {"sql": f"SELECT * FROM {table}"}
+    if dtype == "s3":
+        # An S3 key is resolved against the configured prefix, not a root, so
+        # the connector names the field `key` rather than `path`.
+        return {"key": table}
     # filesystem + rest_api both address by the table name (a relative path / endpoint).
     return {"path": table}
 
@@ -85,8 +125,8 @@ async def walkthrough(ds, args) -> None:
     schema = await service.discover_schema(ds.id, KEY_ID)
     tables = schema["tables"]
     if not tables:
-        print("      (no readable tables found — for a filesystem source, point --root at a")
-        print("       directory containing CSV/text/PDF/XLSX files)")
+        print("      (no readable tables found — filesystem and s3 sources expose only")
+        print("       CSV/text/PDF/XLSX, so point --root or --bucket at some of those)")
         return
     for t in tables[:20]:
         fields = t.get("fields") or []
@@ -135,14 +175,27 @@ def print_connect(db_url: str) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="eiye_db quickstart", formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--name", required=True, help="a label for this datasource")
-    p.add_argument("--type", required=True, choices=["filesystem", "postgresql", "rest_api"])
+    # Choices come from the enum, so a connector cannot ship without appearing
+    # here — the enum is already the register-time contract that every type has
+    # a working connector.
+    p.add_argument("--type", required=True, choices=sorted(t.value for t in DataSourceType))
     p.add_argument("--root", help="filesystem: directory to expose (read-only)")
-    p.add_argument("--dsn", help="postgresql: connection string")
+    p.add_argument("--path", help="sqlite: absolute path to the database file")
+    p.add_argument("--dsn", help="postgresql / mysql / sqlserver: connection string")
+    p.add_argument("--bucket", help="s3: bucket name (credentials from the AWS environment, or --config)")
     p.add_argument("--url", help="rest_api: base URL")
+    p.add_argument("--config", help="extra connector config as JSON, merged over the flag above")
     p.add_argument("--limit", type=int, default=5, help="max rows for the sample query (default 5)")
     p.add_argument("--request", help="override the sample query with a JSON request object")
     p.add_argument("--db", help="metadata store URL (default: sqlite at backend/eiye.db)")
     args = p.parse_args()
+
+    # Report a missing optional driver here rather than as an ImportError three
+    # steps later, the same way the register route does.
+    try:
+        require_driver(DataSourceType(args.type))
+    except ConnectorError as e:
+        sys.exit(str(e))
 
     db_url = args.db or f"sqlite:///{BACKEND / 'eiye.db'}"
     db.configure(db_url)

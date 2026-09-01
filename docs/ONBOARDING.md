@@ -79,7 +79,8 @@ backend/eiye_db/
                    filesystem/s3 (documents.py shared), rest.py
   api.py           REST routes (/api/v1/...)
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (322 pass, 51 skipped); conftest gives fresh DB + client per test
+backend/tests/     pytest suite (264 pass, 11 skipped on a bare install); conftest gives
+                   a fresh DB + client per test
 frontend/          React + Vite UI: datasource management + "Semantic model" review view
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
@@ -108,16 +109,27 @@ agents directly, and all go through `service.py`.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 322 pass, 51 skipped (live servers, see below)
+pytest -q                       # 264 pass, 11 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
 ```
 
-Optional extras (both **off by default**, each fails loud at boot if enabled but
-unusable):
+The 11 skips are connector suites with nothing to run against: three whole files
+skip at import for a missing optional driver (`[mysql]`, `[mssql]`, `[s3]`), and
+the rest are live tests waiting on `EIYE_TEST_*`. Install an extra or start a
+server and both counts move — so compare a run against your own previous run,
+not against a number in this file.
+
+Optional extras. The connector drivers ship separately so a deployment installs
+only what it connects to; `ner` and `nl` are **off by default** and each fails
+loud at boot if enabled but unusable. SQLite, filesystem, Postgres and REST need
+nothing extra.
 
 ```bash
+pip install -e ".[mysql]"     # MySQL / MariaDB   (pymysql)
+pip install -e ".[mssql]"     # SQL Server        (pymssql, bundles FreeTDS)
+pip install -e ".[s3]"        # S3 / MinIO        (boto3)
 pip install -e ".[ner]" && python -m spacy download en_core_web_sm  # EIYE_PII_NER_ENABLED=true
 pip install -e ".[nl]"                                              # EIYE_NL_LLM_ENABLED=true
 ```
@@ -253,10 +265,9 @@ rather than trusting it.
 ## Fastest path back to context after a reboot
 
 1. Read this file, then `git log --stat -8`.
-2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (322
-   pass, 51 skipped) = the invariants above still hold. The skips are the live
-   connector tests: they need Postgres/MySQL/MariaDB/SQL Server/MinIO and the
-   `EIYE_TEST_*_DSN` variables CI supplies. SQLite and the offline S3 tests
-   always run.
+2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
+   invariants above still hold. On a bare install that is 264 pass, 11 skipped;
+   installing an optional extra or pointing `EIYE_TEST_*` at a live server
+   raises both numbers, so compare against your own last run, not a constant.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
    backlog; `GOALS.md` has the vision and Semantic Layer Strategy section.
