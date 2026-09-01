@@ -15,6 +15,13 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   const [type, setType] = useState<DataSourceType>(existing?.type ?? "filesystem");
   const [root, setRoot] = useState((existing?.config.root as string) ?? "");
   const [dsn, setDsn] = useState((existing?.config.dsn as string) ?? "");
+  const [dbPath, setDbPath] = useState((existing?.config.path as string) ?? "");
+  const [bucket, setBucket] = useState((existing?.config.bucket as string) ?? "");
+  const [prefix, setPrefix] = useState((existing?.config.prefix as string) ?? "");
+  const [endpointUrl, setEndpointUrl] = useState((existing?.config.endpoint_url as string) ?? "");
+  const [region, setRegion] = useState((existing?.config.region as string) ?? "");
+  const [accessKeyId, setAccessKeyId] = useState((existing?.config.access_key_id as string) ?? "");
+  const [secretAccessKey, setSecretAccessKey] = useState((existing?.config.secret_access_key as string) ?? "");
   const [baseUrl, setBaseUrl] = useState((existing?.config.base_url as string) ?? "");
   const [headers, setHeaders] = useState(
     existing?.config.headers ? JSON.stringify(existing.config.headers, null, 2) : "",
@@ -24,7 +31,22 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
 
   function buildConfig(): Record<string, unknown> | null {
     if (type === "filesystem") return { root: root.trim() };
+    if (type === "sqlite") return { path: dbPath.trim() };
     if (type === "postgresql" || type === "mysql" || type === "sqlserver") return { dsn: dsn.trim() };
+    if (type === "s3") {
+      const cfg: Record<string, unknown> = { bucket: bucket.trim() };
+      // Omitted rather than sent empty: the connector reads an absent key pair
+      // as "use the ambient AWS credential chain", and empty strings would
+      // instead look like a half-filled credential and be rejected.
+      if (prefix.trim()) cfg.prefix = prefix.trim();
+      if (endpointUrl.trim()) cfg.endpoint_url = endpointUrl.trim();
+      if (region.trim()) cfg.region = region.trim();
+      if (accessKeyId.trim() || secretAccessKey.trim()) {
+        cfg.access_key_id = accessKeyId.trim();
+        cfg.secret_access_key = secretAccessKey.trim();
+      }
+      return cfg;
+    }
     const cfg: Record<string, unknown> = { base_url: baseUrl.trim() };
     if (headers.trim()) {
       try {
@@ -124,6 +146,61 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
             login is the only thing holding, and eiye refuses to connect without it.
           </span>
         </label>
+      )}
+
+      {type === "sqlite" && (
+        <label>
+          Database file
+          <input value={dbPath} onChange={(e) => setDbPath(e.target.value)} placeholder="/absolute/path/to/app.db" />
+          <span className="hint">
+            Opened read-only (<code>mode=ro</code>), which SQLite enforces for writes and schema changes alike. The path
+            must be absolute, and a file that isn’t there is an error rather than a new empty database.
+          </span>
+        </label>
+      )}
+
+      {type === "s3" && (
+        <>
+          <label>
+            Bucket
+            <input value={bucket} onChange={(e) => setBucket(e.target.value)} placeholder="my-exports" />
+          </label>
+          <label>
+            Prefix (optional)
+            <input value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="exports/" />
+            <span className="hint">Bounds what this datasource exposes, the way a root does for a filesystem.</span>
+          </label>
+          <label>
+            Endpoint URL (optional)
+            <input
+              value={endpointUrl}
+              onChange={(e) => setEndpointUrl(e.target.value)}
+              placeholder="http://minio.internal:9000"
+            />
+            <span className="hint">Set for MinIO or another S3-compatible server; leave empty for AWS.</span>
+          </label>
+          <label>
+            Region (optional)
+            <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="us-east-1" />
+          </label>
+          <label>
+            Access key ID (optional)
+            <input value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} placeholder="AKIA…" />
+          </label>
+          <label>
+            Secret access key (optional)
+            <input
+              type="password"
+              value={secretAccessKey}
+              onChange={(e) => setSecretAccessKey(e.target.value)}
+              placeholder="…"
+            />
+            <span className="hint">
+              Leave both empty to use the host’s AWS credentials (instance role, profile, environment). eiye only ever
+              calls ListObjectsV2 and GetObject — scope the key to those two anyway.
+            </span>
+          </label>
+        </>
       )}
 
       {type === "rest_api" && (

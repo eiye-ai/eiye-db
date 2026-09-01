@@ -65,7 +65,7 @@ jobs:
       # is an optional extra so a deployment installs only what it connects to.
       # httpx (TestClient) is a runtime dep.
       - name: Install
-        run: pip install -e ".[dev,mysql,mssql]"
+        run: pip install -e ".[dev,mysql,mssql,s3]"
 
       - name: Lint
         run: ruff check .
@@ -93,12 +93,28 @@ jobs:
           conn.close()
           PY
 
-      # MySQL, MariaDB and SQL Server run against the service containers above.
+      # Not a service container: the MinIO image takes `server /data` as its
+      # command, and `services:` has no field for one — only `options`, which
+      # docker applies before the image's arguments.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9000/minio/health/live && exit 0
+            sleep 2
+          done
+          echo "MinIO never became reachable" && docker logs minio && exit 1
+
+      # MySQL, MariaDB, SQL Server and MinIO run against the servers above.
       # The live Postgres tests still skip — EIYE_TEST_PG_DSN is unset — so a
       # green run does not exercise the Postgres connector against a real server.
+      # SQLite needs no variable: its "server" is a file each test creates.
       - name: Test
         env:
           EIYE_TEST_MYSQL_DSN: mysql://root:eiye@127.0.0.1:3306/t
           EIYE_TEST_MARIADB_DSN: mysql://root:eiye@127.0.0.1:3307/t
           EIYE_TEST_MSSQL_DSN: sqlserver://sa:eiyeTest%212026@127.0.0.1:1433/eiyetest
+          EIYE_TEST_S3_ENDPOINT: http://127.0.0.1:9000
         run: pytest -q

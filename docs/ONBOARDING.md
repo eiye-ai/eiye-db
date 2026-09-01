@@ -75,10 +75,11 @@ backend/eiye_db/
   resolution.py    entity resolution: normalization + tiered name matching (stdlib-only)
   nl.py            NL→query: deterministic matcher + optional LLM bootstrap (llm_bind)
   metrics.py       operational metrics summary (audit-trail aggregation, admin-only)
-  connectors/      base.py + postgres.py, filesystem.py, rest.py; factory in __init__
+  connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite (sql.py shared),
+                   filesystem/s3 (documents.py shared), rest.py
   api.py           REST routes (/api/v1/...)
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (227 pass, 2 skipped); conftest gives fresh DB + client per test
+backend/tests/     pytest suite (322 pass, 51 skipped); conftest gives fresh DB + client per test
 frontend/          React + Vite UI: datasource management + "Semantic model" review view
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
@@ -88,7 +89,8 @@ scripts/                quickstart.{py,sh}, seed_example_policies.py, mcp_dogfoo
 
 CI runs pytest and ruff, nothing more. It is regression protection, not an
 authorization check: the route-auth audit found real defects while this exact
-gate was green. Live-PG tests skip in CI (no `EIYE_TEST_PG_DSN`).
+gate was green. CI supplies MySQL, MariaDB, SQL Server and MinIO, so those live
+tests run; live-PG still skips there (no `EIYE_TEST_PG_DSN`).
 
 ### The 9 MCP tools (what an agent sees)
 
@@ -106,7 +108,7 @@ agents directly, and all go through `service.py`.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 227 pass, 2 skipped (live-PG, see below)
+pytest -q                       # 322 pass, 51 skipped (live servers, see below)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -130,9 +132,14 @@ This is a **security/governance product**. The first three guarantees must hold
 **unconditionally** on *every* access path (REST and MCP). A gap in any is
 high-severity:
 
-1. **Read-only.** Postgres runs inside a `readonly=True` transaction *and* wraps
-   user SQL in a bounding subquery; filesystem is root-scoped + traversal-safe;
-   REST is GET-only.
+1. **Read-only.** Every connector states its own mechanism, because they do not
+   generalise: Postgres runs inside a `readonly=True` transaction *and* wraps
+   user SQL in a bounding subquery; SQLite is opened `mode=ro` + `query_only`;
+   MySQL layers a non-writing login over a read-only transaction that covers DML
+   but not DDL; SQL Server has no read-only transaction at all and rests on a
+   login verified at every connect; filesystem is root-scoped + traversal-safe;
+   S3 is prefix-scoped and calls only ListObjectsV2/GetObject; REST is GET-only.
+   Read the connector's module docstring before changing one.
 2. **PII redaction.** `pii.redact_structure` redacts keys **and** values **and**
    numeric scalars. `include_pii=True` is REST-admin-only; the **MCP path always
    redacts** (no opt-out). The query *request* is also redacted before it's
@@ -246,7 +253,10 @@ rather than trusting it.
 ## Fastest path back to context after a reboot
 
 1. Read this file, then `git log --stat -8`.
-2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (227
-   pass, 2 skipped) = the invariants above still hold.
+2. `cd backend && source .venv/bin/activate && pytest -q` — green suite (322
+   pass, 51 skipped) = the invariants above still hold. The skips are the live
+   connector tests: they need Postgres/MySQL/MariaDB/SQL Server/MinIO and the
+   `EIYE_TEST_*_DSN` variables CI supplies. SQLite and the offline S3 tests
+   always run.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
    backlog; `GOALS.md` has the vision and Semantic Layer Strategy section.

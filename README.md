@@ -182,7 +182,7 @@ npm run dev
 
 Open **http://localhost:5173**. The dev server proxies `/api` to the backend on
 `localhost:8000`, so no extra configuration is needed. Use **+ New** to register a
-datasource (filesystem / PostgreSQL / MySQL / SQL Server / REST API), then **Test connection**,
+datasource (filesystem / PostgreSQL / MySQL / SQL Server / SQLite / S3 / REST API), then **Test connection**,
 **Discover schema**, and **Run query** to see redacted results.
 
 - Backend on a different host/port? Set `VITE_PROXY_TARGET` (proxy) or
@@ -200,15 +200,19 @@ datasource (filesystem / PostgreSQL / MySQL / SQL Server / REST API), then **Tes
 | PostgreSQL | SQL DB | ✅ Available (read-only transactions) |
 | MySQL / MariaDB | SQL DB | ✅ Available (requires a login with no write privileges — see below) |
 | SQL Server | SQL DB | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
+| SQLite | SQL DB (file) | ✅ Available (opened `mode=ro`; no driver to install) |
 | File System | Files (CSV, text, PDF, XLSX) | ✅ Available (root-scoped, schema inference, PII-redacted) |
+| S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | ✅ Available (prefix-scoped, list + get only — see below) |
 | REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
 
 Drivers for connectors beyond the original three ship as extras, so a deployment
 installs only what it connects to:
 
 ```bash
-pip install -e "backend[mysql]"
+pip install -e "backend[mysql]"      # also: [mssql], [s3]
 ```
+
+SQLite needs no extra — `sqlite3` is in the standard library.
 
 ### MySQL / MariaDB needs a read-only login
 
@@ -246,6 +250,50 @@ Register it with `sqlserver://eiye:...@host:1433/mydb` (`mssql://` also accepted
 A database in `READ_ONLY` state is accepted regardless of grants. SQL auth only —
 not SSPI, not Azure AD. `pip install -e "backend[mssql]"`; pymssql bundles FreeTDS,
 so there is no `msodbcsql18` system package to install.
+
+### SQLite needs nothing, because the file is opened read-only
+
+The strongest guarantee of the four, and the cheapest: `file:...?mode=ro` maps to
+`SQLITE_OPEN_READONLY`, which the library refuses to write through at all — `DROP
+TABLE` fails exactly the way `INSERT` does. No grant to provision, no driver to
+install. `PRAGMA query_only` extends the refusal to any database `ATTACH`ed later,
+which `mode=ro` alone would not cover.
+
+Register it with an **absolute** path: `{"path": "/srv/data/app.db"}`. A file that
+is not there is an error rather than a new empty database, which is the point of
+opening read-only rather than checking first.
+
+### S3 / MinIO is scoped by prefix, and only ever lists and gets
+
+Two calls, ever: `ListObjectsV2` over the configured prefix, and `GetObject` for
+one object. There is no request field through which a caller could ask for a
+third — `request` is `{"key": "reports/q1.csv"}`, relative to the prefix, not a
+query language. So unlike the SQL connectors, there is no wide text channel to
+defend, and the read-only property is structural rather than credential-verified.
+
+What is *not* claimed is that the credential itself cannot write: AWS offers no
+way to ask "is this key read-only" that a read-only key is allowed to call, and
+MinIO implements no equivalent, so a probe would either lie or write. Scope the
+key yourself:
+
+```json
+{"Version": "2012-10-17", "Statement": [
+  {"Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::my-exports",
+   "Condition": {"StringLike": {"s3:prefix": ["exports/*"]}}},
+  {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::my-exports/exports/*"}
+]}
+```
+
+Config: `bucket` (required), `prefix`, `endpoint_url` (set for MinIO, omit for
+AWS), `region`, and `access_key_id` / `secret_access_key` — omit both to use the
+host's ambient AWS credentials. CSV, text, PDF and XLSX are extracted with the
+same code as the filesystem connector. Object bytes are parsed in memory and
+dropped; nothing is written to `eiye.db` and nothing is cached on disk.
+
+Two limits worth knowing, because neither is silent: discovery lists at most
+1,000 objects and reads column headers for the first 100 CSVs (the rest are
+listed with no fields and still queryable), and a query refuses an object over
+64 MiB rather than returning a truncated prefix of it.
 
 ## Pricing Tiers
 
