@@ -5,9 +5,10 @@ import { TYPE_LABELS } from "./types";
 import DataSourceForm from "./components/DataSourceForm";
 import DataSourcePanel from "./components/DataSourcePanel";
 import SemanticPanel from "./components/SemanticPanel";
+import AccessPanel from "./components/AccessPanel";
 
 type Mode = "idle" | "new" | "edit";
-type View = "sources" | "semantic";
+type View = "sources" | "semantic" | "access";
 
 export default function App() {
   const [view, setView] = useState<View>("sources");
@@ -56,6 +57,9 @@ export default function App() {
           <button className={view === "semantic" ? "tab active" : "tab"} onClick={() => setView("semantic")}>
             Semantic model
           </button>
+          <button className={view === "access" ? "tab active" : "tab"} onClick={() => setView("access")}>
+            Access
+          </button>
         </nav>
         <div className="api-key">
           <input
@@ -71,6 +75,10 @@ export default function App() {
       {view === "semantic" ? (
         <main className="single">
           <SemanticPanel sources={sources} />
+        </main>
+      ) : view === "access" ? (
+        <main className="single">
+          <AccessPanel sources={sources} />
         </main>
       ) : (
       <div className="layout">

@@ -505,6 +505,26 @@ def test_example_policies_are_valid():
         assert created["id"]
 
 
+def test_every_example_placeholder_is_substitutable():
+    """A placeholder the seed script does not know about gets POSTed verbatim,
+    creating a policy whose subject or resource matches nothing. In an
+    access-control file that reads as configured and is inert, which is the
+    worst of the available states."""
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    examples = json.loads((root / "examples" / "policies" / "example_policies.json").read_text())
+    spec = importlib.util.spec_from_file_location("seed", root / "scripts" / "seed_example_policies.py")
+    seed = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(seed)
+    known = {seed.PLACEHOLDER, seed.SUBJECT_PLACEHOLDER}
+    for p in examples:
+        found = {v for v in [p["resource_id"], *p["subjects"]] if "REPLACE-WITH" in v}
+        assert found <= known, f"{p['name']} carries an unhandled placeholder: {sorted(found - known)}"
+
+
 # --- operating the hardened posture (default-deny) ---
 
 

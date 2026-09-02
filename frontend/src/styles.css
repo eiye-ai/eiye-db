@@ -453,3 +453,10 @@ main.single {
   color: var(--muted);
   word-break: break-all;
 }
+
+/* Access review. Inputs are full-width everywhere else, which in a flex row
+   wraps the button onto its own line; the subject field shares its row. */
+.subject-row input {
+  flex: 1;
+  min-width: 220px;
+}
