@@ -174,8 +174,17 @@ boundary:
    columns are dropped before redaction; denied sources vanish from schema,
    export, listings, and the propose_\* existence oracle. Admin bypasses (admins
    are the governors), recorded as `basis="admin-bypass"`. Order: explicit deny >
-   explicit allow > default. Open dev mode requires **both** keys unset; setting
-   exactly one is refused at boot, so no gate here is silently vacuous.
+   explicit allow > default. Open dev mode requires **every** key setting unset
+   — `EIYE_API_KEY`, `EIYE_ADMIN_API_KEY` and the `EIYE_API_KEYS` map — so no
+   gate here is silently vacuous. Setting exactly one of the first two is
+   refused at boot; so is a map that reuses the reserved ids `primary`/`admin`
+   while their settings are live, or one with no admin in it and no
+   `EIYE_ADMIN_API_KEY` beside it (which would lock the operator out entirely).
+   **Subjects are only as fine-grained as the keys.** `EIYE_API_KEY` resolves
+   every HTTP caller to `primary`, so `subjects` matching is a no-op over REST
+   until named keys exist; that is what `EIYE_API_KEYS` is for, and why it had
+   to land before `abac_default_deny` could mean anything per-agent. Over MCP
+   the subject comes from `EIYE_KEY_ID`, which is asserted rather than proved.
 5. **Entitlements are not access control.** `license.py` gates on what the
    *deployment* is licensed to do; ABAC gates on what a *subject* may see. Keep
    them apart: an admin bypasses ABAC because they govern their own data, but

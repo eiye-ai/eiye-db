@@ -68,8 +68,8 @@ uvicorn eiye_db.main:app --reload
 > launches from any directory, and it reads dependencies from `pyproject.toml`
 > (the single source of truth).
 
-With **no keys set**, the API runs in open dev mode and the curls below work as
-written. To secure it, set **both** `EIYE_API_KEY=<key>` and
+With **no keys set at all**, the API runs in open dev mode and the curls below
+work as written. To secure it, set **both** `EIYE_API_KEY=<key>` and
 `EIYE_ADMIN_API_KEY=<admin-key>`, then add `-H "X-API-Key: $EIYE_API_KEY"` to
 every request below. Setting only one is refused at boot: a half-configured
 service looks secured and isn't, so it fails loudly instead of serving.
@@ -84,6 +84,42 @@ The two keys map onto two surfaces:
 The admin key also gates unredacted PII, the audit log, policy management, and
 every curation step (approving relationships and metrics). So with keys set, the
 registration curls in step 2 take `$EIYE_ADMIN_API_KEY`; querying takes either.
+
+#### Named keys: one identity per agent
+
+`EIYE_API_KEY` resolves **every** HTTP caller to the single subject `primary`.
+That is fine for one agent and wrong for several: a policy naming `subjects`
+cannot tell them apart, and neither can the audit trail. Give each agent its own
+key instead:
+
+```bash
+python scripts/mint_key.py --id support-agent
+python scripts/mint_key.py --id ops --admin --expires 2027-01-01
+```
+
+Each run prints the secret **once** and the map entry to keep. Collect the
+entries into one JSON object:
+
+```bash
+export EIYE_API_KEYS='{
+  "support-agent": {"sha256": "<hex>", "is_admin": false},
+  "ops":           {"sha256": "<hex>", "is_admin": true, "expires_at": "2027-01-01"}
+}'
+```
+
+The id becomes the ABAC subject and the audit principal, so
+`"subjects": ["support-agent"]` in a policy now means that one agent. Only the
+digest is stored, so the config leaks no working credential. `is_admin` grants
+the admin surface described above, and `expires_at` is optional; an expired key
+gets a 401 that says so rather than one that reads like a typo.
+
+The map coexists with the two settings above, which keep their reserved ids
+`primary` and `admin` — existing policies naming those subjects go on working.
+Three rules are enforced at boot, not discovered in production: the map alone
+counts as a configured deployment (it does **not** leave you in open dev mode),
+it may not reuse a reserved id while that setting is live, and it must contain
+an admin unless `EIYE_ADMIN_API_KEY` supplies one. Keys are read at startup, so
+adding or revoking one takes a restart.
 
 ### 2. Register the demo datasource and query it
 
@@ -144,7 +180,10 @@ ABAC subject and its identity in the audit trail. Give each agent its own so
 policies can target it and the trail can tell them apart. It is **not a
 credential** — any local process can claim any id — which is acceptable only
 because stdio MCP already trusts whoever spawned the process. Do not treat it
-as authentication.
+as authentication. This is the one real difference from the named keys above:
+over HTTP an id is *proved* by presenting its secret, over stdio it is merely
+*asserted*. Both are ABAC subjects and both land in the audit trail; only one is
+evidence of who was calling.
 
 The agent gets nine tools — `list_datasources`, `get_schema`, `query_datasource`,
 `list_metrics`, `query_metric`, `resolve_entities`, `ask`, and the draft-only

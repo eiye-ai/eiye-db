@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi.responses import JSONResponse
 
-from eiye_db import __version__, db, license, pii
+from eiye_db import __version__, db, license, pii, security
 from eiye_db.api import router
 from eiye_db.config import settings
 
@@ -53,17 +53,37 @@ async def lifespan(_app: FastAPI):
             "partially configured auth: set both EIYE_API_KEY and EIYE_ADMIN_API_KEY, "
             "or neither (open dev mode). Setting only one leaves the other role unreachable."
         )
+    # A named entry that reuses a reserved id while the setting occupying it is
+    # live gives two different secrets one ABAC subject and one audit
+    # principal, erasing the distinction the map exists to draw.
+    for reserved, occupied_by in (("primary", settings.api_key), ("admin", settings.admin_api_key)):
+        if occupied_by is not None and reserved in settings.api_keys:
+            setting = "EIYE_ADMIN_API_KEY" if reserved == "admin" else "EIYE_API_KEY"
+            raise RuntimeError(
+                f"EIYE_API_KEYS defines the reserved key id '{reserved}', which {setting} already "
+                f"occupies. Two credentials would share one subject and one audit identity: rename "
+                f"the entry, or unset {setting}."
+            )
+    # A map with no admin in it, and no EIYE_ADMIN_API_KEY beside it, locks the
+    # operator out of registrations, policies, the audit log and every approval
+    # -- with no way back in that does not involve a restart.
+    if settings.api_keys and settings.admin_api_key is None:
+        if not any(entry.is_admin for entry in settings.api_keys.values()):
+            raise RuntimeError(
+                'no admin principal: no entry in EIYE_API_KEYS sets "is_admin": true and '
+                "EIYE_ADMIN_API_KEY is unset. The whole admin surface would be unreachable."
+            )
     # A licence that is configured but unusable fails the boot. An operator who
     # paid and mis-deployed the file must learn that now, not by silently
     # running on free-tier limits and hitting them in production.
     entitlements = license.current()
     _log_license(entitlements)
     db.configure()
-    if settings.api_key is None:
+    if not security.auth_configured():
         import logging
 
         logging.getLogger("eiye_db").warning(
-            "EIYE_API_KEY is unset (open dev mode): every caller is admin — "
+            "No API keys are set (open dev mode): every caller is admin — "
             "can approve semantics and view raw PII. Set keys before exposing this."
         )
     if settings.pii_ner_enabled:
