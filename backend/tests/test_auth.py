@@ -323,3 +323,27 @@ def test_map_parses_from_the_environment(monkeypatch):
     parsed = Settings(_env_file=None)
     assert parsed.api_keys["ops"].is_admin is True
     assert parsed.api_keys["ops"].expires_at.year == 2027
+
+
+def test_boot_refuses_an_empty_key_setting(monkeypatch):
+    """`EIYE_API_KEY=$TYPO` expands to "" and is not the same as unset: it reads
+    as configured, and an empty setting compares equal to an empty header."""
+    from fastapi.testclient import TestClient
+
+    from eiye_db.main import app
+
+    monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "admin_api_key", "")
+    with pytest.raises(RuntimeError, match="set but empty"):
+        with TestClient(app):
+            pass
+
+
+def test_empty_key_header_never_authenticates(client, monkeypatch):
+    """The request-side half of the same hole: even reached with empty settings,
+    an empty X-API-Key must not resolve to a principal — least of all admin."""
+    monkeypatch.setattr(settings, "api_key", "")
+    monkeypatch.setattr(settings, "admin_api_key", "")
+    monkeypatch.setattr(settings, "api_keys", {})
+    assert client.get("/api/v1/surface/sources", headers={"X-API-Key": ""}).status_code == 401
+    assert client.get("/api/v1/datasources", headers={"X-API-Key": ""}).status_code == 401

@@ -48,6 +48,16 @@ async def lifespan(_app: FastAPI):
     # Refuse the half-configured state before doing any setup work: an operator
     # who set one key believes the service is secured, and a warning they may
     # never read is not enough to correct that belief.
+    # An empty setting is not an unset one. `EIYE_API_KEY=$TYPO` in a unit file
+    # or compose file expands to "", which reads as configured, boots without
+    # complaint, and then authenticates an empty X-API-Key header as admin.
+    for name, value in (("EIYE_API_KEY", settings.api_key), ("EIYE_ADMIN_API_KEY", settings.admin_api_key)):
+        if value is not None and not value.strip():
+            raise RuntimeError(
+                f"{name} is set but empty — most likely a variable that expanded to nothing. "
+                "That leaves the service looking configured while it is not. Give it a value, "
+                "or unset it deliberately for open dev mode."
+            )
     if (settings.api_key is None) != (settings.admin_api_key is None):
         raise RuntimeError(
             "partially configured auth: set both EIYE_API_KEY and EIYE_ADMIN_API_KEY, "

@@ -57,7 +57,9 @@ def require_api_key(x_api_key: str | None = Header(None)) -> Identity:
     """
     if not auth_configured():
         return Identity(key_id="dev", is_admin=True)
-    if x_api_key is None:
+    if not x_api_key:
+        # Empty, not just absent: an empty setting compares equal to an empty
+        # header, so `EIYE_API_KEY=` would otherwise admit a caller sending one.
         raise HTTPException(status_code=401, detail=INVALID_KEY)
     if settings.admin_api_key is not None and _matches(x_api_key, settings.admin_api_key):
         return Identity(key_id="admin", is_admin=True)
