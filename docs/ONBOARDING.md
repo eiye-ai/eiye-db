@@ -83,7 +83,8 @@ backend/eiye_db/
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
 backend/tests/     pytest suite (296 pass, 11 skipped on a bare install); conftest gives
                    a fresh DB + client per test
-frontend/          React + Vite UI: datasource management + "Semantic model" review view
+frontend/          React + Vite UI: datasource management, "Semantic model" review, and
+                   "Access" (subject review, grant, policy list) — an operator console
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
 scripts/                quickstart.{py,sh}, mint_key.py (named keys), grant.py (allow
@@ -239,6 +240,10 @@ keeping.
   rather than widening it, and an ambiguous source name is refused rather than
   resolved to whichever row sorted first — granting the wrong source is an
   access-control mistake, not a typo.
+- **The console's Access tab** does all of it with a form: review a subject,
+  grant per source or on everything, list and delete policies. It writes the
+  same policy names as `grant.py`, so the two cannot leave one deployment with
+  two naming conventions.
 - **`GET /api/v1/access/{key_id}`** reports what one subject can reach:
   read, discover and masked columns per source, plus which setting configures
   that subject. Admin-only, for the same reason the policy list is. It calls

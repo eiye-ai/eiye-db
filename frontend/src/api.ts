@@ -1,4 +1,13 @@
-import type { DataSource, DataSourceType, Metric, QueryResponse, Relationship, Schema } from "./types";
+import type {
+  AccessReview,
+  DataSource,
+  DataSourceType,
+  Metric,
+  Policy,
+  QueryResponse,
+  Relationship,
+  Schema,
+} from "./types";
 
 // Default to the Vite proxy path (/api/v1). Set VITE_API_BASE to hit the backend
 // directly (e.g. http://localhost:8000/api/v1) — the backend allows CORS for it.
@@ -63,6 +72,15 @@ export interface QueryBody {
   limit: number;
 }
 
+export interface PolicyBody {
+  name: string;
+  description: string;
+  effect: "allow" | "deny";
+  resource_id: string;
+  actions: string[];
+  subjects: string[];
+}
+
 export const api = {
   list: () => req<DataSource[]>("/datasources"),
   get: (id: string) => req<DataSource>(`/datasources/${id}`),
@@ -84,4 +102,11 @@ export const api = {
   reviewMetric: (id: string, status: "approved" | "rejected") =>
     req<Metric>(`/semantic/metrics/${id}/review`, { method: "PUT", body: JSON.stringify({ status }) }),
   removeMetric: (id: string) => req<void>(`/semantic/metrics/${id}`, { method: "DELETE" }),
+
+  // Access control. All three are admin-only: a policy list maps out what is
+  // being protected. A key id is caller-supplied text, so it is encoded.
+  access: (keyId: string) => req<AccessReview>(`/access/${encodeURIComponent(keyId)}`),
+  policies: () => req<Policy[]>("/policies"),
+  createPolicy: (body: PolicyBody) => req<Policy>("/policies", { method: "POST", body: JSON.stringify(body) }),
+  removePolicy: (id: string) => req<void>(`/policies/${id}`, { method: "DELETE" }),
 };

@@ -228,9 +228,14 @@ datasource (filesystem / PostgreSQL / MySQL / SQL Server / SQLite / S3 / REST AP
   `VITE_API_BASE` (direct, e.g. `http://host:8000/api/v1`) before `npm run dev`,
   and add that browser origin to `EIYE_CORS_ORIGINS` (comma-separated) for the backend.
 - If the backend has keys set, paste the **admin** key into the field in the UI
-  header: the dashboard drives the operator surface (registrations, curation).
-  Since admins bypass ABAC, handing out UI access hands out full governance
-  authority — treat it as an operator console, not an agent-facing app.
+  header: the dashboard drives the operator surface (registrations, curation,
+  access). Since admins bypass ABAC, handing out UI access hands out full
+  governance authority — treat it as an operator console, not an agent-facing app.
+- The **Access** tab reviews what one subject can reach, grants it read and
+  discover on a source or on everything, and lists and deletes policies. It is
+  the console equivalent of `scripts/grant.py` and the access review below, and
+  writes policies under the same names, so the two do not leave a deployment
+  with two conventions.
 
 ## Access control (ABAC)
 
@@ -276,6 +281,9 @@ Re-running is safe: a grant whose policy name already exists is reported and
 skipped rather than widened. To remove one, take the policy id it printed and
 `DELETE /api/v1/policies/<id>`.
 
+The web console's **Access** tab does the same thing with a form, and writes
+the same policy names. Use whichever fits; a deployment can mix them.
+
 Then check what a subject can actually reach. This is the part that makes the
 posture operable: a denied caller gets a deliberately generic message, so from
 the outside a missing allow and an explicit deny look identical.
@@ -314,8 +322,11 @@ Two things to know before turning it on:
   refused to run without one could not be used to write the first one. Admin
   keys keep working throughout, so it is always recoverable.
 
-Example policies, including column masking and per-source grants, are in
-`examples/policies/`; `scripts/seed_example_policies.py` loads them.
+Example policies, including column masking, per-source grants and the named-key
+shape, are in `examples/policies/`; `scripts/seed_example_policies.py` loads
+them. They are shape references rather than the recommended path — a policy
+carrying an unsubstituted placeholder is skipped rather than seeded, because a
+subject that matches nothing reads as configured and is not.
 
 ## Datasource Connectors
 

@@ -74,6 +74,39 @@ export interface Metric {
   status: "approved" | "candidate" | "rejected";
 }
 
+/** One source's line in an access review: what this subject may actually do. */
+export interface AccessRow {
+  datasource_id: string;
+  name: string;
+  read: boolean;
+  discover: boolean;
+  masked_columns: string[];
+}
+
+export interface AccessReview {
+  key_id: string;
+  /** Which setting configures this subject, or "none" — an MCP client asserts
+   * its own EIYE_KEY_ID, so a subject with no credential behind it is normal. */
+  credential: string;
+  is_admin: boolean;
+  default_deny: boolean;
+  dev_mode: boolean;
+  datasources: AccessRow[];
+}
+
+export interface Policy {
+  id: string;
+  name: string;
+  description: string;
+  effect: "allow" | "deny";
+  resource_type: string;
+  resource_id: string;
+  actions: string[];
+  subjects: string[];
+  conditions: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export const TYPE_LABELS: Record<DataSourceType, string> = {
   filesystem: "Filesystem",
   postgresql: "PostgreSQL",

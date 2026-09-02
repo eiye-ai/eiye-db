@@ -18,7 +18,7 @@
   },
   {
     "name": "allow-primary-read-all",
-    "description": "For hardened deployments running EIYE_ABAC_DEFAULT_DENY=true: grants the primary API key baseline read and schema access to every source. Without an allow policy, default-deny blocks all non-admin access.",
+    "description": "Shape reference for a wildcard allow under EIYE_ABAC_DEFAULT_DENY=true: read and discover on every source, present and future. 'primary' is the id every caller presenting EIYE_API_KEY resolves to. For a real grant prefer scripts/grant.py --all-sources, which writes this and names it the same way the console does.",
     "effect": "allow",
     "resource_id": "*",
     "actions": ["read", "discover"],
@@ -26,10 +26,18 @@
   },
   {
     "name": "allow-agents-approved-source",
-    "description": "For default-deny deployments: admit MCP agents to one explicitly approved source only. Replace resource_id with the datasource id to expose. Pair with allow-primary-read-all or scope subjects as needed.",
+    "description": "Shape reference for a per-source allow: admit one subject to one approved source. Replace resource_id with the datasource id. 'mcp-stdio' is only the DEFAULT MCP identity - a client that sets EIYE_KEY_ID is a different subject and needs its own allow. Prefer scripts/grant.py --subject <id> --source <name>.",
     "effect": "allow",
     "resource_id": "REPLACE-WITH-DATASOURCE-ID",
     "actions": ["read", "discover"],
     "subjects": ["mcp-stdio"]
+  },
+  {
+    "name": "allow-named-key-one-source",
+    "description": "A named key from EIYE_API_KEYS is an ordinary subject: use its key id verbatim. The other examples predate named keys and only name 'primary' or 'mcp-stdio', so this is the shape none of them show. Needs both --datasource-id and --subject when seeding.",
+    "effect": "allow",
+    "resource_id": "REPLACE-WITH-DATASOURCE-ID",
+    "actions": ["read", "discover"],
+    "subjects": ["REPLACE-WITH-KEY-ID"]
   }
 ]
