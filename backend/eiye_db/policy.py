@@ -174,6 +174,35 @@ def check(key_id: str, is_admin: bool, action: str, datasource_id: str) -> set[s
     return masked
 
 
+def explain(key_id: str, is_admin: bool, datasource_ids: list[str]) -> list[dict[str, Any]]:
+    """What one subject may do with each source, decided by the same functions
+    that enforce it.
+
+    Default-deny is hard to operate blind. The refusal a caller sees is
+    deliberately generic (policy names reveal what is being protected), so from
+    the outside a missing allow and an explicit deny look identical, and the
+    only way to tell them apart is to read the whole policy table by hand. This
+    calls check() and permits() rather than reimplementing their order, because
+    an explanation that could drift from enforcement is worse than none.
+    """
+    reviewed = []
+    for ds_id in datasource_ids:
+        try:
+            masked = sorted(check(key_id, is_admin, "read", ds_id))
+            read = True
+        except PolicyDenied:
+            masked, read = [], False
+        reviewed.append(
+            {
+                "datasource_id": ds_id,
+                "read": read,
+                "discover": permits(key_id, is_admin, "discover", ds_id),
+                "masked_columns": masked,
+            }
+        )
+    return reviewed
+
+
 def permits(key_id: str, is_admin: bool, action: str, datasource_id: str) -> bool:
     """Non-raising check, for filtering metadata listings (no audit — a
     filtered listing is not a denied access attempt)."""

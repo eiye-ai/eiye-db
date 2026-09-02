@@ -232,6 +232,91 @@ datasource (filesystem / PostgreSQL / MySQL / SQL Server / SQLite / S3 / REST AP
   Since admins bypass ABAC, handing out UI access hands out full governance
   authority — treat it as an operator console, not an agent-facing app.
 
+## Access control (ABAC)
+
+Policies say which subjects may reach which sources, and which columns are
+masked out of the results. A subject is a key id: an `EIYE_API_KEYS` entry, the
+reserved ids `primary` and `admin`, or whatever an MCP client puts in
+`EIYE_KEY_ID`. Admins bypass policy entirely, because they are the ones who
+write it.
+
+Evaluation order is fixed and does not depend on which policy was created
+first: **explicit deny beats explicit allow beats the default.** A deny with
+`conditions.columns` masks those columns instead of blocking the source, and
+masks from every matching policy accumulate. Masking is applied before PII
+redaction and disclosed in result lineage.
+
+### Two postures
+
+**Allow-by-default (the default).** A fresh install works with no policies, and
+you add denies to carve access down. Right for a single trusted agent and for
+evaluating the product.
+
+**Default-deny**, set with `EIYE_ABAC_DEFAULT_DENY=true`. Every non-admin
+subject is denied on every source until an allow policy names it, so a new
+agent starts with nothing and gets exactly what you grant. Right when several
+agents share a deployment, or when a source should never be reachable by
+accident.
+
+### Running default-deny
+
+Grant access with `scripts/grant.py`, which resolves sources by name and writes
+the policy for you:
+
+```bash
+python scripts/grant.py --subject support-agent --source customers \
+  --api-key "$EIYE_ADMIN_API_KEY"
+
+# or every source, present and future
+python scripts/grant.py --subject support-agent --all-sources \
+  --api-key "$EIYE_ADMIN_API_KEY"
+```
+
+Re-running is safe: a grant whose policy name already exists is reported and
+skipped rather than widened. To remove one, take the policy id it printed and
+`DELETE /api/v1/policies/<id>`.
+
+Then check what a subject can actually reach. This is the part that makes the
+posture operable: a denied caller gets a deliberately generic message, so from
+the outside a missing allow and an explicit deny look identical.
+
+```bash
+curl -s localhost:8000/api/v1/access/support-agent -H "X-API-Key: $EIYE_ADMIN_API_KEY"
+```
+
+```json
+{
+  "key_id": "support-agent",
+  "credential": "EIYE_API_KEYS",
+  "is_admin": false,
+  "default_deny": true,
+  "dev_mode": false,
+  "datasources": [
+    {"datasource_id": "...", "name": "customers", "read": true, "discover": true, "masked_columns": ["ssn"]}
+  ]
+}
+```
+
+`credential` says which setting configures the subject, so a mistyped key id
+reads as `"none"` rather than as a real agent that lost its access. The review
+is computed by the same functions that enforce access, so it cannot drift from
+what a caller will actually get.
+
+Two things to know before turning it on:
+
+- **Your MCP agents need grants too.** The MCP setup above gives each agent its
+  own `EIYE_KEY_ID`, and under default-deny each of those is a subject with no
+  access until you grant it. Granting `mcp-stdio` alone is not enough if your
+  clients set their own ids.
+- **Starting with no allow policy denies every non-admin caller.** The server
+  logs a warning at boot when that is the state. It warns rather than refusing
+  to start, because policies are created through the API and a server that
+  refused to run without one could not be used to write the first one. Admin
+  keys keep working throughout, so it is always recoverable.
+
+Example policies, including column masking and per-source grants, are in
+`examples/policies/`; `scripts/seed_example_policies.py` loads them.
+
 ## Datasource Connectors
 
 | Connector | Type | Status |

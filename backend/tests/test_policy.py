@@ -503,3 +503,127 @@ def test_example_policies_are_valid():
             p.get("conditions", {}),
         )
         assert created["id"]
+
+
+# --- operating the hardened posture (default-deny) ---
+
+
+@pytest.fixture
+def hardened(monkeypatch):
+    from eiye_db.config import settings
+
+    monkeypatch.setattr(settings, "abac_default_deny", True)
+
+
+def test_explain_reports_read_discover_and_masks(client, keys, tmp_path):
+    """The review is decided by check() and permits() themselves. An
+    explanation that could drift from enforcement would be worse than none."""
+    ds = _register_demo(client, tmp_path)
+    policy.create("mask-ssn", "", "deny", ds["id"], ["read"], ["primary"], {"columns": ["ssn"]})
+    reviewed = policy.explain("primary", False, [ds["id"]])
+    assert reviewed == [
+        {"datasource_id": ds["id"], "read": True, "discover": True, "masked_columns": ["ssn"]}
+    ]
+
+    policy.create("no-read", "", "deny", ds["id"], ["read"], ["primary"])
+    blocked = policy.explain("primary", False, [ds["id"]])[0]
+    assert blocked["read"] is False and blocked["discover"] is True and blocked["masked_columns"] == []
+
+
+def test_explain_under_default_deny_needs_an_allow(client, keys, hardened, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    before = policy.explain("support-agent", False, [ds["id"]])[0]
+    assert before["read"] is False and before["discover"] is False
+
+    policy.create("allow-support", "", "allow", ds["id"], ["read", "discover"], ["support-agent"])
+    after = policy.explain("support-agent", False, [ds["id"]])[0]
+    assert after["read"] is True and after["discover"] is True
+
+
+def test_explain_shows_admin_bypass(client, keys, hardened, tmp_path):
+    """Admins bypass ABAC entirely, so a review of an admin subject must say
+    'everything', not repeat the policy table back."""
+    ds = _register_demo(client, tmp_path)
+    reviewed = policy.explain("admin", True, [ds["id"]])[0]
+    assert reviewed["read"] is True and reviewed["discover"] is True
+
+
+def test_access_review_is_admin_only(client, keys, tmp_path):
+    _register_demo(client, tmp_path)
+    assert client.get("/api/v1/access/primary", headers=PRIMARY).status_code == 403
+    assert client.get("/api/v1/access/primary", headers=ADMIN).status_code == 200
+
+
+def test_access_review_names_the_credential(client, keys, tmp_path):
+    """Which setting configures a subject is the first thing an operator needs:
+    a typo'd key id reviews as 'none' rather than as a locked-out agent."""
+    ds = _register_demo(client, tmp_path)
+    body = client.get("/api/v1/access/primary", headers=ADMIN).json()
+    assert body["credential"] == "EIYE_API_KEY" and body["is_admin"] is False
+    assert body["dev_mode"] is False and body["default_deny"] is False
+    assert body["datasources"][0]["name"] == "demo"
+    assert body["datasources"][0]["datasource_id"] == ds["id"]
+
+    unknown = client.get("/api/v1/access/typo-agent", headers=ADMIN).json()
+    assert unknown["credential"] == "none" and unknown["is_admin"] is False
+
+    admin_view = client.get("/api/v1/access/admin", headers=ADMIN).json()
+    assert admin_view["credential"] == "EIYE_ADMIN_API_KEY" and admin_view["is_admin"] is True
+
+
+def test_access_review_reflects_a_grant(client, keys, hardened, tmp_path):
+    ds = _register_demo(client, tmp_path)
+    denied = client.get("/api/v1/access/support-agent", headers=ADMIN).json()
+    assert denied["default_deny"] is True
+    assert denied["datasources"][0]["read"] is False
+
+    client.post(
+        "/api/v1/policies",
+        json={
+            "name": "allow-support-demo",
+            "description": "",
+            "effect": "allow",
+            "resource_id": ds["id"],
+            "actions": ["read", "discover"],
+            "subjects": ["support-agent"],
+        },
+        headers=ADMIN,
+    )
+    granted = client.get("/api/v1/access/support-agent", headers=ADMIN).json()
+    assert granted["datasources"][0]["read"] is True and granted["datasources"][0]["discover"] is True
+
+
+def test_boot_warns_when_default_deny_has_no_allow(monkeypatch, tmp_path, caplog):
+    """Silent until every agent fails. Warn, never refuse: policies are created
+    through the API, so refusing to start without one would deadlock."""
+    from fastapi.testclient import TestClient
+
+    from eiye_db.config import settings
+    from eiye_db.main import app
+
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/deny.db")
+    monkeypatch.setattr(settings, "abac_default_deny", True)
+    with caplog.at_level("WARNING", logger="eiye_db"):
+        with TestClient(app):
+            pass
+    assert any("no allow policy exists" in r.message for r in caplog.records)
+
+
+def test_boot_is_quiet_when_an_allow_exists(monkeypatch, tmp_path, caplog):
+    from fastapi.testclient import TestClient
+
+    from eiye_db import db
+    from eiye_db.config import settings
+    from eiye_db.main import app
+
+    # The policy must live in the database the lifespan will configure, which
+    # it reads from settings — not the one the fresh_db fixture pointed at.
+    url = f"sqlite:///{tmp_path}/allow.db"
+    monkeypatch.setattr(settings, "database_url", url)
+    monkeypatch.setattr(settings, "abac_default_deny", True)
+    db.configure(url)
+    policy.create("allow-any", "", "allow", "*", ["read", "discover"], ["primary"])
+    with caplog.at_level("WARNING", logger="eiye_db"):
+        with TestClient(app):
+            pass
+    assert not any("no allow policy exists" in r.message for r in caplog.records)

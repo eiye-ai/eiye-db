@@ -19,7 +19,7 @@ from eiye_db.models import (
     SourceQueryRequest,
     SourceQueryResponse,
 )
-from eiye_db.security import Identity, require_api_key
+from eiye_db.security import Identity, auth_configured, require_api_key, subject_authority
 
 router = APIRouter(prefix="/api/v1")
 
@@ -394,6 +394,38 @@ def policy_delete(policy_id: str, identity: Identity = Depends(require_api_key))
         raise HTTPException(404, "policy not found")
     # Deleting a policy changes who can access what: record what was removed.
     audit.record("delete_policy", "policy", policy_id, identity.key_id, details=removed)
+
+
+@router.get("/access/{key_id}")
+def access_review(key_id: str, identity: Identity = Depends(require_api_key)):
+    """What one subject can reach, for operating a default-deny deployment.
+
+    Admin-only for the same reason the policy list is: it maps out what is
+    being protected. Evaluated through policy.explain, which calls the
+    enforcement functions themselves rather than restating their order.
+
+    `is_admin` comes from the subject's configured credential; a subject with
+    none is reported as "none" and evaluated as non-admin, which is what an
+    MCP client asserting an arbitrary EIYE_KEY_ID actually gets.
+    """
+    if not identity.is_admin:
+        raise HTTPException(403, "access review requires the admin API key")
+    is_admin, credential = subject_authority(key_id)
+    names = {ds.id: ds.name for ds in registry.list_all()}
+    reviewed = policy.explain(key_id, is_admin, list(names))
+    for row in reviewed:
+        row["name"] = names[row["datasource_id"]]
+    return {
+        "key_id": key_id,
+        "credential": credential,
+        "is_admin": is_admin,
+        "default_deny": settings.abac_default_deny,
+        # Open dev mode makes every HTTP caller an admin, so the rows below
+        # describe the MCP path only. Reported rather than folded in, because
+        # one flag cannot be true for both transports at once.
+        "dev_mode": not auth_configured(),
+        "datasources": reviewed,
+    }
 
 
 @router.get("/audit")

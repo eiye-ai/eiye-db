@@ -96,6 +96,23 @@ async def lifespan(_app: FastAPI):
             "No API keys are set (open dev mode): every caller is admin — "
             "can approve semantics and view raw PII. Set keys before exposing this."
         )
+    if settings.abac_default_deny:
+        # Warn, never refuse. Policies are created through the API, so a server
+        # that refused to start without one could not be used to write the
+        # first one — the flag would be unadoptable. Admins bypass ABAC, so
+        # this state is recoverable; it is just silent until someone notices
+        # every agent failing.
+        from eiye_db import policy
+
+        if not any(p["effect"] == "allow" for p in policy.list_policies()):
+            import logging
+
+            logging.getLogger("eiye_db").warning(
+                "EIYE_ABAC_DEFAULT_DENY is on and no allow policy exists: every non-admin "
+                "caller is denied on every source, including MCP agents. Admin keys still "
+                "work. Grant access with scripts/grant.py, and check a subject with "
+                "GET /api/v1/access/{key_id}."
+            )
     if settings.pii_ner_enabled:
         # Fail loud at boot if the NER model is missing, rather than 500-ing (or
         # worse, silently under-redacting) on the first query.
