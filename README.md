@@ -332,7 +332,7 @@ subject that matches nothing reads as configured and is not.
 
 | Connector | Type | Status |
 |-----------|------|--------|
-| PostgreSQL | SQL DB | ✅ Available (read-only transactions) |
+| PostgreSQL | SQL DB | ✅ Available (requires a read-only login; read-only transactions — see below) |
 | MySQL / MariaDB | SQL DB | ✅ Available (requires a login with no write privileges — see below) |
 | SQL Server | SQL DB | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
 | SQLite | SQL DB (file) | ✅ Available (opened `mode=ro`; no driver to install) |
@@ -350,10 +350,45 @@ pip install -e "backend[mysql]"      # also: [mssql], [s3]
 
 SQLite needs no extra — `sqlite3` is in the standard library.
 
+### PostgreSQL needs a read-only login too
+
+This connector shipped first, and for a long time its read-only claim rested on
+`BEGIN READ ONLY` alone. Testing it against a live server showed that is not
+enough, so it now requires a login that cannot write, checked on every connect.
+
+The read-only transaction is genuinely strong — it rejects every INSERT, UPDATE,
+DELETE, CREATE, DROP, TRUNCATE and GRANT, along with `nextval`, `SELECT INTO`
+and writes performed inside a function. Two things get past it, both verified
+against PostgreSQL 16:
+
+- **`COPY ... TO PROGRAM`** runs a shell command on the database server, inside
+  a read-only transaction. Only the connector's query wrapper stops it.
+- **`dblink`** opens a *second* session, which the transaction — scoped to the
+  first — never covers. As a superuser, `SELECT dblink_exec(...)` performs a
+  real INSERT through the ordinary query path, as a statement that is
+  syntactically a plain SELECT.
+
+Both need privileges an ordinary reader does not have, which is the point: the
+login is the boundary here exactly as it is on the other engines.
+
+```sql
+CREATE ROLE eiye LOGIN PASSWORD '...';
+GRANT CONNECT ON DATABASE mydb TO eiye;
+GRANT USAGE ON SCHEMA public TO eiye;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO eiye;
+```
+
+Register it with `postgresql://eiye:...@host:5432/mydb`. A **superuser DSN is
+refused outright**, so if you have been pointing eiye at the `postgres` account,
+this is a breaking change and the grants above are the fix. The check reads
+effective privileges, so a write held through a role, through `PUBLIC`, through
+`pg_write_all_data`, or on a view over the table is caught the same way.
+
 ### MySQL / MariaDB needs a read-only login
 
-Postgres gives us a server-enforced read-only transaction that also covers DDL.
-**MySQL does not.** `START TRANSACTION READ ONLY` rejects INSERT/UPDATE/DELETE, but
+Postgres gives us a server-enforced read-only transaction that also covers DDL
+(though not everything — see below). **MySQL does not.**
+`START TRANSACTION READ ONLY` rejects INSERT/UPDATE/DELETE, but
 CREATE, DROP, TRUNCATE and GRANT all execute inside one — verified against MySQL 8.4
 and MariaDB 11.8. So the connector refuses to connect at all unless the login it is
 given provably cannot write, and it re-checks on every connection:
