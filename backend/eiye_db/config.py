@@ -1,6 +1,49 @@
 """Configuration management with environment variable support (EIYE_ prefix)."""
 
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class NamedKey(BaseModel):
+    """One entry in the EIYE_API_KEYS map: a credential and the authority it carries.
+
+    `sha256` is the hex digest of the key itself, so a leaked config file leaks
+    no working credential. A plain digest rather than a password KDF is adequate
+    *only because* these secrets are machine-generated at full entropy
+    (`scripts/mint_key.py` emits 256 bits). Never hash a human-chosen passphrase
+    into this field: at SHA-256 speed it is guessable, and the map would then be
+    a liability rather than a protection.
+
+    Unknown fields are refused. A map is edited by hand, and `"admin": true`
+    instead of `"is_admin": true` would otherwise be accepted in silence as a
+    non-admin key -- the reading of it nobody intended.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sha256: str
+    is_admin: bool = False
+    expires_at: datetime | None = None
+
+    @field_validator("sha256")
+    @classmethod
+    def _is_hex_digest(cls, value: str) -> str:
+        digest = value.strip().lower()
+        if len(digest) != 64 or digest.strip("0123456789abcdef"):
+            raise ValueError("sha256 must be a 64-character hex digest (see scripts/mint_key.py)")
+        return digest
+
+    @field_validator("expires_at")
+    @classmethod
+    def _assume_utc(cls, value: datetime | None) -> datetime | None:
+        # "2027-01-01" parses to a naive datetime, and comparing naive to aware
+        # raises TypeError -- which would surface as a 500 on every request
+        # rather than as a bad setting. Read a bare timestamp as UTC.
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class Settings(BaseSettings):
@@ -20,6 +63,16 @@ class Settings(BaseSettings):
     # service is worse than an obviously open one.
     api_key: str | None = None
     admin_api_key: str | None = None
+
+    # Named keys, as JSON: EIYE_API_KEYS='{"support": {"sha256": "<hex>",
+    # "is_admin": false, "expires_at": "2027-01-01"}}'. Each entry is its own
+    # ABAC subject and audit principal, which is the entire point: EIYE_API_KEY
+    # resolves every HTTP caller to key_id="primary", so policy `subjects`
+    # matching is a no-op over REST and one agent cannot be told from another.
+    # Coexists with the two single-key settings above (which keep working and
+    # keep their reserved ids); mint entries with scripts/mint_key.py. Held in
+    # the environment, so adding or revoking a key takes a restart.
+    api_keys: dict[str, NamedKey] = {}
 
     # The principal the stdio MCP server runs as: its ABAC subject and audit
     # identity. Set EIYE_KEY_ID per agent in the MCP client's launch env to give
