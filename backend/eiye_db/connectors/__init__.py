@@ -13,6 +13,7 @@ _OPTIONAL_DRIVERS = {
     DataSourceType.MYSQL: ("pymysql", "mysql"),
     DataSourceType.SQLSERVER: ("pymssql", "mssql"),
     DataSourceType.S3: ("boto3", "s3"),
+    DataSourceType.ORACLE: ("oracledb", "oracle"),
 }
 
 
@@ -46,6 +47,11 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.mssql import SQLServerConnector
 
         return SQLServerConnector(config)
+    if type == DataSourceType.ORACLE:
+        require_driver(type)
+        from eiye_db.connectors.oracle import OracleConnector
+
+        return OracleConnector(config)
     if type == DataSourceType.SQLITE:
         from eiye_db.connectors.sqlite import SQLiteConnector
 

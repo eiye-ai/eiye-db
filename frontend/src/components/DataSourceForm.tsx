@@ -32,7 +32,8 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   function buildConfig(): Record<string, unknown> | null {
     if (type === "filesystem") return { root: root.trim() };
     if (type === "sqlite") return { path: dbPath.trim() };
-    if (type === "postgresql" || type === "mysql" || type === "sqlserver") return { dsn: dsn.trim() };
+    if (type === "postgresql" || type === "mysql" || type === "sqlserver" || type === "oracle")
+      return { dsn: dsn.trim() };
     if (type === "s3") {
       const cfg: Record<string, unknown> = { bucket: bucket.trim() };
       // Omitted rather than sent empty: the connector reads an absent key pair
@@ -144,6 +145,22 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
           <span className="hint">
             SQL auth only. Must be a login with no write permissions — SQL Server has no read-only transaction, so the
             login is the only thing holding, and eiye refuses to connect without it.
+          </span>
+        </label>
+      )}
+
+      {type === "oracle" && (
+        <label>
+          Connection string (DSN)
+          <input
+            value={dsn}
+            onChange={(e) => setDsn(e.target.value)}
+            placeholder="oracle://user:pass@host:1521/SERVICE"
+          />
+          <span className="hint">
+            Must be a login that holds only read privileges — eiye reads the account&rsquo;s effective privileges on
+            every connect and refuses anything else, including writes reaching it through a role or through PUBLIC.
+            No Oracle Instant Client is needed.
           </span>
         </label>
       )}

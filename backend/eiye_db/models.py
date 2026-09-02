@@ -26,6 +26,7 @@ class DataSourceType(StrEnum):
     MYSQL = "mysql"
     SQLSERVER = "sqlserver"
     SQLITE = "sqlite"
+    ORACLE = "oracle"
     FILE_SYSTEM = "filesystem"
     # AWS S3, MinIO, and anything else speaking the S3 API. One member, because
     # the difference is an endpoint URL, not a protocol.

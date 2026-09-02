@@ -4,6 +4,7 @@ export type DataSourceType =
   | "mysql"
   | "sqlserver"
   | "sqlite"
+  | "oracle"
   | "s3"
   | "rest_api";
 
@@ -113,6 +114,7 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
   mysql: "MySQL / MariaDB",
   sqlserver: "SQL Server",
   sqlite: "SQLite",
+  oracle: "Oracle",
   s3: "S3 / MinIO",
   rest_api: "REST API",
 };
@@ -120,7 +122,7 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
 // What a source is queried *with*, which is not the same question as what it
 // is. Both groups have more than one member now, so asking by group keeps the
 // next connector from having to be added to four `||` chains.
-const SQL_TYPES: DataSourceType[] = ["postgresql", "mysql", "sqlserver", "sqlite"];
+const SQL_TYPES: DataSourceType[] = ["postgresql", "mysql", "sqlserver", "sqlite", "oracle"];
 const OBJECT_TYPES: DataSourceType[] = ["filesystem", "s3"];
 
 /** Queried with SQL text. */

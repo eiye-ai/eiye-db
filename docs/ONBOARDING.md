@@ -77,7 +77,7 @@ backend/eiye_db/
   resolution.py    entity resolution: normalization + tiered name matching (stdlib-only)
   nl.py            NL→query: deterministic matcher + optional LLM bootstrap (llm_bind)
   metrics.py       operational metrics summary (audit-trail aggregation, admin-only)
-  connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite (sql.py shared),
+  connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite/oracle (sql.py shared),
                    filesystem/s3 (documents.py shared), rest.py
   api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
@@ -155,7 +155,12 @@ high-severity:
    user SQL in a bounding subquery; SQLite is opened `mode=ro` + `query_only`;
    MySQL layers a non-writing login over a read-only transaction that covers DML
    but not DDL; SQL Server has no read-only transaction at all and rests on a
-   login verified at every connect; filesystem is root-scoped + traversal-safe;
+   login verified at every connect; Oracle deliberately runs *no* read-only
+   transaction (it would block only DML, which the bounding subquery already
+   makes a syntax error, and it fails valid reads with ORA-01466 right after
+   DDL) and instead reads the login's *effective* privileges — direct, via role,
+   and via PUBLIC, all three of which can carry a write; filesystem is
+   root-scoped + traversal-safe;
    S3 is prefix-scoped and calls only ListObjectsV2/GetObject; REST is GET-only.
    Read the connector's module docstring before changing one.
 2. **PII redaction.** `pii.redact_structure` redacts keys **and** values **and**
