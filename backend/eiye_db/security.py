@@ -47,6 +47,28 @@ def _named_key(presented: str) -> tuple[str, NamedKey] | None:
     return None
 
 
+def subject_authority(key_id: str) -> tuple[bool, str]:
+    """(is_admin, which setting configures it) for one subject id.
+
+    "none" is not an error. Over MCP the subject is whatever the client put in
+    EIYE_KEY_ID, which is asserted rather than proved, so a subject with no
+    credential behind it is the normal case there — and it is exactly the id an
+    access review needs to be able to ask about.
+
+    Open dev mode is deliberately not special-cased. It makes every *HTTP*
+    caller an admin while MCP callers stay non-admin, so there is no single
+    answer for a bare key id; the caller reports the mode separately.
+    """
+    if key_id == "admin" and settings.admin_api_key is not None:
+        return True, "EIYE_ADMIN_API_KEY"
+    if key_id == "primary" and settings.api_key is not None:
+        return False, "EIYE_API_KEY"
+    entry = settings.api_keys.get(key_id)
+    if entry is not None:
+        return entry.is_admin, "EIYE_API_KEYS"
+    return False, "none"
+
+
 def require_api_key(x_api_key: str | None = Header(None)) -> Identity:
     """FastAPI dependency. Open dev mode requires *every* key setting to be unset.
 

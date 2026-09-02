@@ -347,3 +347,36 @@ def test_empty_key_header_never_authenticates(client, monkeypatch):
     monkeypatch.setattr(settings, "api_keys", {})
     assert client.get("/api/v1/surface/sources", headers={"X-API-Key": ""}).status_code == 401
     assert client.get("/api/v1/datasources", headers={"X-API-Key": ""}).status_code == 401
+
+
+def test_subject_authority_names_the_configuring_setting(monkeypatch):
+    """An access review has to say where a subject's authority comes from. A
+    typo'd id must read as 'none', not as a real agent that lost its access."""
+    from eiye_db.security import subject_authority
+
+    monkeypatch.setattr(settings, "api_key", "secret")
+    monkeypatch.setattr(settings, "admin_api_key", "root-secret")
+    monkeypatch.setattr(
+        settings,
+        "api_keys",
+        {"support-agent": _entry(SUPPORT_SECRET), "ops": _entry(OPS_SECRET, is_admin=True)},
+    )
+    assert subject_authority("admin") == (True, "EIYE_ADMIN_API_KEY")
+    assert subject_authority("primary") == (False, "EIYE_API_KEY")
+    assert subject_authority("ops") == (True, "EIYE_API_KEYS")
+    assert subject_authority("support-agent") == (False, "EIYE_API_KEYS")
+    # An MCP client asserts its own EIYE_KEY_ID, so a subject with no
+    # credential behind it is normal there rather than an error.
+    assert subject_authority("mcp-stdio") == (False, "none")
+
+
+def test_reserved_ids_carry_no_authority_when_unset(monkeypatch):
+    """'admin' is only an admin while EIYE_ADMIN_API_KEY exists. Otherwise it
+    is an ordinary MCP subject name and must not review as privileged."""
+    from eiye_db.security import subject_authority
+
+    monkeypatch.setattr(settings, "api_key", None)
+    monkeypatch.setattr(settings, "admin_api_key", None)
+    monkeypatch.setattr(settings, "api_keys", {"ops": _entry(OPS_SECRET, is_admin=True)})
+    assert subject_authority("admin") == (False, "none")
+    assert subject_authority("primary") == (False, "none")

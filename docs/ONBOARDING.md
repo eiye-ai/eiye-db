@@ -64,11 +64,13 @@ backend/eiye_db/
                    metrics, policies, audit_logs
   registry.py      datasource CRUD; delete cascades relationships/metrics/policies
   service.py       ** the governance chain — shared by REST and MCP; every access path **
-  security.py      API-key auth (dev mode only when BOTH keys unset; admin key gates raw
-                   PII, curation, policies, and the raw /datasources registration surface)
+  security.py      API-key auth: EIYE_API_KEY/EIYE_ADMIN_API_KEY plus the EIYE_API_KEYS
+                   named map (one subject per agent). Dev mode only when ALL THREE are
+                   unset; admin gates raw PII, curation, policies, and raw /datasources
   audit.py         append-only audit trail
   pii.py           regex PII detection + recursive redaction (optional spaCy NER layer)
-  policy.py        ABAC engine: allow/deny per source, column masking, subject/action scoping
+  policy.py        ABAC engine: allow/deny per source, column masking, subject/action
+                   scoping; explain() backs the access review endpoint
   license.py       entitlements: offline Ed25519 verification, tier limits, expiry ladder
   semantic.py      relationship detection (structural/heuristic/behavioral), governance, YAML
   catalog.py       metric catalog: typed params, injection-hostile substitution, approval gate
@@ -77,14 +79,15 @@ backend/eiye_db/
   metrics.py       operational metrics summary (audit-trail aggregation, admin-only)
   connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite (sql.py shared),
                    filesystem/s3 (documents.py shared), rest.py
-  api.py           REST routes (/api/v1/...)
+  api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (264 pass, 11 skipped on a bare install); conftest gives
+backend/tests/     pytest suite (296 pass, 11 skipped on a bare install); conftest gives
                    a fresh DB + client per test
 frontend/          React + Vite UI: datasource management + "Semantic model" review view
 examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
-scripts/                quickstart.{py,sh}, seed_example_policies.py, mcp_dogfood.sh
+scripts/                quickstart.{py,sh}, mint_key.py (named keys), grant.py (allow
+                        policies for default-deny), seed_example_policies.py, mcp_dogfood.sh
 .github/workflows/ci.yml  pytest + ruff on a 3.11/3.12 matrix
 ```
 
@@ -100,8 +103,10 @@ tests run; live-PG still skips there (no `EIYE_TEST_PG_DSN`).
 execute approved metrics. `propose_relationship`, `propose_metric` — draft
 candidates for human review (never authoritative). `resolve_entities` —
 cross-source name matching. `ask` — NL question answered only through approved
-metrics. All run as the non-admin `mcp-stdio` subject, so ABAC policies govern
-agents directly, and all go through `service.py`.
+metrics. All run as the non-admin subject named by `EIYE_KEY_ID` (default
+`mcp-stdio`), so ABAC policies govern agents directly, and all go through
+`service.py`. That id is asserted by the client, not proved — under
+default-deny each distinct id an agent claims needs its own grant.
 
 ## Run and test
 
@@ -109,7 +114,7 @@ agents directly, and all go through `service.py`.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 264 pass, 11 skipped (see below on the skips)
+pytest -q                       # 296 pass, 11 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -169,7 +174,9 @@ Three further rules are load-bearing for the semantic layer and the commercial
 boundary:
 
 4. **ABAC enforcement.** Policies are **allow-by-default** (a fresh install works
-   with zero policies); `EIYE_ABAC_DEFAULT_DENY=true` flips the posture. When
+   with zero policies); `EIYE_ABAC_DEFAULT_DENY=true` flips the posture, and is
+   a supported deployment mode rather than a flag to flip blind — see
+   "Operating default-deny" below. When
    policies exist they are enforced on every data *and metadata* path — masked
    columns are dropped before redaction; denied sources vanish from schema,
    export, listings, and the propose_\* existence oracle. Admin bypasses (admins
@@ -219,6 +226,43 @@ near side is gated by `check_schema_access`, the far side by
 `visible_datasource_ids`. The React UI drives the operator surface, so it needs
 `EIYE_ADMIN_API_KEY`; and because admins bypass ABAC, UI access *is* full
 governance authority, not merely credential read-back.
+
+## Operating default-deny
+
+The flag has always existed; what was missing was any way to run a deployment
+with it on. Three pieces close that, and the reasoning behind each is worth
+keeping.
+
+- **`scripts/grant.py`** writes the allow policy, resolving sources by name.
+  Hand-writing policy JSON and looking up datasource ids is why the posture was
+  easy to turn on and hard to run. Re-running skips an existing policy name
+  rather than widening it, and an ambiguous source name is refused rather than
+  resolved to whichever row sorted first — granting the wrong source is an
+  access-control mistake, not a typo.
+- **`GET /api/v1/access/{key_id}`** reports what one subject can reach:
+  read, discover and masked columns per source, plus which setting configures
+  that subject. Admin-only, for the same reason the policy list is. It calls
+  `policy.check` and `policy.permits` rather than restating their order,
+  because an explanation that could drift from enforcement is worse than none.
+  It exists because the caller-facing denial is deliberately generic, so from
+  outside the server a missing allow and an explicit deny are indistinguishable.
+- **A boot warning** when default-deny is on and no allow policy exists at all.
+  It **warns and does not refuse**, and that is deliberate: policies are created
+  through the API, so a server that refused to start without one could never be
+  used to write the first one. Admins bypass ABAC, so the state is always
+  recoverable; it is just silent until every agent starts failing.
+
+**Why the default was not flipped.** The decision (2026-09-02) was to support
+the posture properly and leave `abac_default_deny` defaulting to False. Three
+reasons, all still current: the README tells operators to give each MCP agent
+its own `EIYE_KEY_ID`, and those ids are chosen after any seeding runs, so no
+seeded allow can cover them — default-deny would put a policy-authoring step in
+front of the wedge. Seeding for the subjects that *are* known (`primary`,
+`quickstart`, `mcp-stdio`) reaches neither those agents nor named keys. And the
+setting is read live on every check with no migration hook (Alembic is still
+backlog), so changing the default changes behavior for every self-hoster on
+upgrade, with "all my agents stopped working" as the symptom. Revisit at a
+major version, with release notes, now that the tooling exists.
 
 ## Gotchas that cost time
 
@@ -275,7 +319,7 @@ rather than trusting it.
 
 1. Read this file, then `git log --stat -8`.
 2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
-   invariants above still hold. On a bare install that is 264 pass, 11 skipped;
+   invariants above still hold. On a bare install that is 296 pass, 11 skipped;
    installing an optional extra or pointing `EIYE_TEST_*` at a live server
    raises both numbers, so compare against your own last run, not a constant.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
