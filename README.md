@@ -336,6 +336,7 @@ subject that matches nothing reads as configured and is not.
 | MySQL / MariaDB | SQL DB | ✅ Available (requires a login with no write privileges — see below) |
 | SQL Server | SQL DB | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
 | SQLite | SQL DB (file) | ✅ Available (opened `mode=ro`; no driver to install) |
+| Oracle | SQL DB | ✅ Available (requires a read-only login; no Instant Client — see below) |
 | File System | Files (CSV, text, PDF, XLSX) | ✅ Available (root-scoped, schema inference, PII-redacted) |
 | S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | ✅ Available (prefix-scoped, list + get only — see below) |
 | REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
@@ -385,6 +386,39 @@ Register it with `sqlserver://eiye:...@host:1433/mydb` (`mssql://` also accepted
 A database in `READ_ONLY` state is accepted regardless of grants. SQL auth only —
 not SSPI, not Azure AD. `pip install -e "backend[mssql]"`; pymssql bundles FreeTDS,
 so there is no `msodbcsql18` system package to install.
+
+### Oracle checks the login's effective privileges, not just its grants
+
+`pip install 'eiye-db[oracle]'`, then register with
+`oracle://user:pass@host:1521/SERVICE`. python-oracledb runs in Thin mode, which
+speaks the wire protocol directly, so there is **no Oracle Instant Client to
+install** on the host or in a container.
+
+The login must hold read privileges and nothing else. eiye checks that on every
+connect, not once at registration, so a privilege granted afterwards cannot
+silently remove the guarantee:
+
+```sql
+CREATE USER eiye IDENTIFIED BY '...';
+GRANT CREATE SESSION TO eiye;
+GRANT SELECT ON app.customers TO eiye;
+```
+
+The check reads *effective* privileges, because a login can hold a write three
+ways and only one of them shows up in the obvious place. Direct grants appear in
+`USER_TAB_PRIVS`; a privilege carried by a **role** does not, and neither does
+one granted to **PUBLIC**. Both were observed letting an apparently read-only
+login insert rows. The scope is deliberately your schemas rather than every
+schema, because stock Oracle grants writes to PUBLIC on its own internal
+objects, and refusing those would reject every real database.
+
+Unlike the other SQL connectors, this one runs **no read-only transaction**, and
+that is deliberate. Oracle's blocks DML, which the connector's bounding subquery
+already makes a syntax error, so it adds nothing — while its transaction-level
+snapshot fails valid reads with ORA-01466 for a few seconds after any change to
+the table's definition. It would also not cover DDL: a `DROP` issued inside one
+destroyed the table. The read-only login is the boundary; the subquery and
+Oracle's refusal to accept statement batches are what keep it hard to reach.
 
 ### SQLite needs nothing, because the file is opened read-only
 

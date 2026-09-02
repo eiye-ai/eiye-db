@@ -51,6 +51,20 @@ jobs:
           MSSQL_SA_PASSWORD: "eiyeTest!2026"
           MSSQL_PID: Developer
         ports: ["1433:1433"]
+      # Oracle Database Free: free-use terms, no licence key, multi-platform so
+      # it also runs locally on Apple Silicon (unlike SQL Server). This is the
+      # reason Oracle was built before Confluence Data Center, which has no
+      # official image and needs a licence Atlassian stopped self-serving in
+      # March 2026 — a connector whose read-only claim cannot be tested against
+      # a real server is a claim resting on skipped tests.
+      oracle:
+        image: gvenzl/oracle-free:slim
+        env:
+          ORACLE_PASSWORD: eiye
+        ports: ["1521:1521"]
+        options: >-
+          --health-cmd="healthcheck.sh"
+          --health-interval=10s --health-timeout=5s --health-retries=30
 
     steps:
       - uses: actions/checkout@v7
@@ -65,7 +79,7 @@ jobs:
       # is an optional extra so a deployment installs only what it connects to.
       # httpx (TestClient) is a runtime dep.
       - name: Install
-        run: pip install -e ".[dev,mysql,mssql,s3]"
+        run: pip install -e ".[dev,mysql,mssql,s3,oracle]"
 
       - name: Lint
         run: ruff check .
@@ -107,7 +121,8 @@ jobs:
           done
           echo "MinIO never became reachable" && docker logs minio && exit 1
 
-      # MySQL, MariaDB, SQL Server and MinIO run against the servers above.
+      # MySQL, MariaDB, SQL Server, Oracle and MinIO run against the servers
+      # above.
       # The live Postgres tests still skip — EIYE_TEST_PG_DSN is unset — so a
       # green run does not exercise the Postgres connector against a real server.
       # SQLite needs no variable: its "server" is a file each test creates.
@@ -117,4 +132,5 @@ jobs:
           EIYE_TEST_MARIADB_DSN: mysql://root:eiye@127.0.0.1:3307/t
           EIYE_TEST_MSSQL_DSN: sqlserver://sa:eiyeTest%212026@127.0.0.1:1433/eiyetest
           EIYE_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          EIYE_TEST_ORACLE_DSN: oracle://system:eiye@127.0.0.1:1521/FREEPDB1
         run: pytest -q

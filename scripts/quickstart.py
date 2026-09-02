@@ -11,6 +11,7 @@ Examples:
   quickstart.py --name warehouse --type postgresql --dsn postgresql://user:pass@host/db
   quickstart.py --name app --type sqlite --path ~/app.db
   quickstart.py --name reports --type mysql --dsn mysql://eiye:pass@host:3306/db
+  quickstart.py --name erp --type oracle --dsn oracle://eiye:pass@host:1521/FREEPDB1
   quickstart.py --name exports --type s3 --bucket my-exports   # AWS_* env for credentials
   quickstart.py --name api --type rest_api --url https://api.example.com
 
@@ -65,13 +66,14 @@ SHORTHAND: dict[str, tuple[str, str, object]] = {
     "postgresql": ("dsn", "dsn", None),
     "mysql": ("dsn", "dsn", None),
     "sqlserver": ("dsn", "dsn", None),
+    "oracle": ("dsn", "dsn", None),
     "s3": ("bucket", "bucket", None),
     "rest_api": ("url", "base_url", None),
 }
 
 # How each connector names the thing a query addresses. Mirrors the shapes in
 # models.SourceQueryRequest; keep the two in step.
-SQL_TYPES = {"postgresql", "mysql", "sqlserver", "sqlite"}
+SQL_TYPES = {"postgresql", "mysql", "sqlserver", "sqlite", "oracle"}
 
 
 def build_config(args: argparse.Namespace) -> dict:
@@ -181,7 +183,7 @@ def main() -> None:
     p.add_argument("--type", required=True, choices=sorted(t.value for t in DataSourceType))
     p.add_argument("--root", help="filesystem: directory to expose (read-only)")
     p.add_argument("--path", help="sqlite: absolute path to the database file")
-    p.add_argument("--dsn", help="postgresql / mysql / sqlserver: connection string")
+    p.add_argument("--dsn", help="postgresql / mysql / sqlserver / oracle: connection string")
     p.add_argument("--bucket", help="s3: bucket name (credentials from the AWS environment, or --config)")
     p.add_argument("--url", help="rest_api: base URL")
     p.add_argument("--config", help="extra connector config as JSON, merged over the flag above")

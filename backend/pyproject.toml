@@ -52,6 +52,11 @@ mssql = ["pymssql>=2.3.0"]
 # Synchronous, so it runs in to_thread. SQLite needs no extra — sqlite3 is
 # stdlib, and its read-only mode is a flag on the open, not a driver feature.
 s3 = ["boto3>=1.35.0"]
+# Oracle. python-oracledb runs in Thin mode by default, which speaks the wire
+# protocol directly and needs no Oracle Instant Client — the packaging problem
+# that kept Oracle off the roadmap in the first place. Natively async, so unlike
+# MySQL and SQL Server this connector needs no to_thread.
+oracle = ["oracledb>=2.0.0"]
 # Name/location redaction. Also run: python -m spacy download en_core_web_sm
 ner = ["spacy>=3.7.0,<4.0.0"]
 # Optional LLM assist for NL->governed-query (EIYE_NL_LLM_ENABLED=true).
