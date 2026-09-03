@@ -36,6 +36,9 @@ class DataSourceType(StrEnum):
     # different auth story, and shipping both behind one member would hide
     # that from whoever registers a source.
     CONFLUENCE = "confluence"
+    # Jira Cloud. Shares an account and an API token with Confluence but not
+    # a schema, so it is its own member rather than a mode of that one.
+    JIRA = "jira"
 
 
 class ConnectionStatus(StrEnum):
@@ -193,7 +196,8 @@ class SourceQueryRequest(BaseModel):
     postgresql / mysql / sqlserver / sqlite / oracle: {"sql": "SELECT ..."} ·
     filesystem: {"path": "rel/file.csv"} · s3: {"key": "rel/object.csv"} ·
     rest_api: {"path": "/endpoint", "params": {...}} ·
-    confluence: {"space": "ENG"} or {"page_id": "123"}."""
+    confluence: {"space": "ENG"} or {"page_id": "123"} ·
+    jira: {"project": "ENG"} or {"issue_key": "ENG-1"}."""
 
     datasource_id: str
     request: dict[str, Any]

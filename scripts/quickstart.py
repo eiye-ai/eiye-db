@@ -16,6 +16,8 @@ Examples:
   quickstart.py --name api --type rest_api --url https://api.example.com
   quickstart.py --name wiki --type confluence --url https://your-site.atlassian.net \
     --config '{"email": "ops@example.com", "api_token": "...", "space_key": "ENG"}'
+  quickstart.py --name tickets --type jira --url https://your-site.atlassian.net \
+    --config '{"email": "ops@example.com", "api_token": "...", "project_key": "ENG"}'
 
 Anything the shorthand flags do not cover goes in --config as JSON, which is
 merged over them:
@@ -72,6 +74,7 @@ SHORTHAND: dict[str, tuple[str, str, object]] = {
     "s3": ("bucket", "bucket", None),
     "rest_api": ("url", "base_url", None),
     "confluence": ("url", "base_url", None),
+    "jira": ("url", "base_url", None),
 }
 
 # How each connector names the thing a query addresses. Mirrors the shapes in
@@ -107,6 +110,9 @@ def sample_request(dtype: str, table: str) -> dict:
         # A Confluence table is a space, and a space is listed rather than read:
         # `discover_schema` names spaces, so the table name is the space key.
         return {"space": table}
+    if dtype == "jira":
+        # Likewise a Jira table is a project, named by its key.
+        return {"project": table}
     # filesystem + rest_api both address by the table name (a relative path / endpoint).
     return {"path": table}
 
@@ -192,7 +198,7 @@ def main() -> None:
     p.add_argument("--path", help="sqlite: absolute path to the database file")
     p.add_argument("--dsn", help="postgresql / mysql / sqlserver / oracle: connection string")
     p.add_argument("--bucket", help="s3: bucket name (credentials from the AWS environment, or --config)")
-    p.add_argument("--url", help="rest_api / confluence: base URL")
+    p.add_argument("--url", help="rest_api / confluence / jira: base URL")
     p.add_argument("--config", help="extra connector config as JSON, merged over the flag above")
     p.add_argument("--limit", type=int, default=5, help="max rows for the sample query (default 5)")
     p.add_argument("--request", help="override the sample query with a JSON request object")
