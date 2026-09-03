@@ -77,4 +77,8 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.jira import JiraConnector
 
         return JiraConnector(config)
+    if type == DataSourceType.SERVICENOW:
+        from eiye_db.connectors.servicenow import ServiceNowConnector
+
+        return ServiceNowConnector(config)
     raise ConnectorError(f"no connector implemented for type '{type}'")

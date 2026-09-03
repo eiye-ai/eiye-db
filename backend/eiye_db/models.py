@@ -39,6 +39,9 @@ class DataSourceType(StrEnum):
     # Jira Cloud. Shares an account and an API token with Confluence but not
     # a schema, so it is its own member rather than a mode of that one.
     JIRA = "jira"
+    # ServiceNow. Table API only, and the datasource names which tables it may
+    # read — there is no "the whole instance" mode.
+    SERVICENOW = "servicenow"
 
 
 class ConnectionStatus(StrEnum):
@@ -197,7 +200,8 @@ class SourceQueryRequest(BaseModel):
     filesystem: {"path": "rel/file.csv"} · s3: {"key": "rel/object.csv"} ·
     rest_api: {"path": "/endpoint", "params": {...}} ·
     confluence: {"space": "ENG"} or {"page_id": "123"} ·
-    jira: {"project": "ENG"} or {"issue_key": "ENG-1"}."""
+    jira: {"project": "ENG"} or {"issue_key": "ENG-1"} ·
+    servicenow: {"table": "incident"}."""
 
     datasource_id: str
     request: dict[str, Any]

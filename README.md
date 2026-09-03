@@ -342,6 +342,7 @@ subject that matches nothing reads as configured and is not.
 | REST API | HTTP API | structural | ✅ Available (GET-only, OpenAPI discovery) |
 | Confluence | Wiki (Cloud) | structural | ✅ Available (operator API token, space-scoped, GET-only — see below) |
 | Jira | Issue tracker (Cloud) | structural | ✅ Available (operator API token, project-scoped, GET-only — see below) |
+| ServiceNow | ITSM | structural | ✅ Available (instance credentials, explicit table allowlist, GET-only — see below) |
 
 ### The two read-only claims, and why they are not the same claim
 
@@ -590,6 +591,40 @@ Two Jira-specific things worth knowing:
 - **`/rest/api/3/search/jql` also has a POST form**, for JQL too long for a
   query string. It reads identically and would break the GET-only guarantee, so
   this connector keeps its queries small enough that GET always suffices.
+
+### ServiceNow names the tables it may read, and there is no “all tables”
+
+```json
+{
+  "base_url": "https://acme.service-now.com",
+  "username": "eiye_ro",
+  "password": "...",
+  "tables": ["incident", "change_request"]
+}
+```
+
+**`tables` is required, and that is the whole design.** A ServiceNow instance
+carries thousands of tables — `sys_user`, `sys_user_has_role`, every custom `u_`
+table an admin ever created. A datasource that exposed all of them by default
+would not be a governed surface, so the operator names what this one may read
+and nothing outside that list can be discovered or queried. It is S3's `prefix`
+and Confluence's `space_key`, made mandatory because the blast radius is larger.
+
+Each allowed table becomes a table in the semantic surface, with columns read
+from `sys_dictionary`. `{"table": "incident"}` returns its records; reference
+fields are collapsed to their values rather than passed through as
+`{link, value}` objects.
+
+There is deliberately **no `sysparm_query` passthrough**. That is a query
+language, and accepting one from a caller would let them dot-walk past the
+allowlist — the same reason the Jira connector refuses raw JQL. Table names are
+validated against the shape ServiceNow itself issues, because they reach both a
+URL path and an encoded query.
+
+The account needs read access to `sys_db_object` and `sys_dictionary` for schema
+discovery, plus a read ACL on each table. Use a dedicated integration account
+with read roles only: this connector never writes, but ServiceNow will serve
+whatever the account can see.
 
 ### S3 / MinIO is scoped by prefix, and only ever lists and gets
 

@@ -13,6 +13,10 @@ credential, nor any way to ask whether a token can write, so there is nothing to
 verify at connect the way the SQL connectors do. What holds is that these
 connectors issue GET and nothing else, enforced by the transport guard in
 `tests/readonly_guards.py`.
+
+The client construction and status-code mapping under all of this live in
+`http_basic.py`, shared with the ServiceNow connector, which authenticates the
+same way and shares none of the rest.
 """
 
 from typing import Any
@@ -21,8 +25,11 @@ from urllib.parse import urlsplit
 import httpx
 
 from eiye_db.connectors.base import Connector, ConnectorError
+from eiye_db.connectors.http_basic import basic_auth_client, get_json
 
-TIMEOUT_SECONDS = 30
+#: Named on every 401/403 because an Atlassian credential that worked for months
+#: has usually expired rather than been mistyped.
+AUTH_HINT = "Atlassian API tokens expire after one year."
 
 TOKEN_HELP = (
     "Mint the token at https://id.atlassian.com/manage-profile/security/api-tokens — it is the "
@@ -73,35 +80,9 @@ class AtlassianCloudConnector(Connector):
         return email, token
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self._site(),
-            auth=self._auth(),
-            headers={"Accept": "application/json"},
-            timeout=TIMEOUT_SECONDS,
-            transport=self._transport,
-        )
+        return basic_auth_client(self._site(), self._auth(), self._transport)
 
     # --- HTTP ----------------------------------------------------------------
 
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict | None = None) -> Any:
-        """One GET, with the failures worth naming named.
-
-        401 and 403 get their own message because the likeliest cause is not a
-        typo: Atlassian API tokens expire after a year, and an operator who set
-        this up eleven months ago will otherwise see only a bare status code.
-        """
-        try:
-            resp = await client.get(path, params=params)
-        except httpx.HTTPError as e:
-            raise ConnectorError(f"request to {path} failed: {e}") from e
-        if resp.status_code in (401, 403):
-            raise ConnectorError(
-                f"HTTP {resp.status_code} from {path}: the email or API token was rejected, or the "
-                "account cannot see this content. Atlassian API tokens expire after one year."
-            )
-        if resp.status_code >= 400:
-            raise ConnectorError(f"HTTP {resp.status_code} from {path}")
-        try:
-            return resp.json()
-        except ValueError as e:
-            raise ConnectorError(f"{path} did not return JSON") from e
+        return await get_json(client, path, params, auth_hint=AUTH_HINT)
