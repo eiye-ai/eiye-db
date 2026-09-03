@@ -16,12 +16,27 @@ jobs:
       run:
         working-directory: backend
 
-    # Both servers, one job, different ports. The MySQL connector's read-only
-    # guarantee is not something unit tests can assert — START TRANSACTION READ
-    # ONLY not covering DDL, and the driver refusing multi-statement, are
-    # server behaviours. And "MariaDB is a dialect, not a second SKU" is only
-    # honest if something exercises MariaDB.
+    # Every SQL engine the repo claims to support, one job, different ports.
     services:
+      # The connector shipped first and was the last to get a live server. Its
+      # read-only claim rested on the read-only transaction alone, and probing
+      # against this container is what showed that is not the boundary: COPY ...
+      # TO PROGRAM runs inside one, and dblink opens a second session the
+      # transaction never covers. The tests that pin both need a real server.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: eiye
+          POSTGRES_DB: t
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      # Both MySQL servers, because the read-only guarantee is not something
+      # unit tests can assert — START TRANSACTION READ ONLY not covering DDL,
+      # and the driver refusing multi-statement, are server behaviours. And
+      # "MariaDB is a dialect, not a second SKU" is only honest if something
+      # exercises MariaDB.
       mysql:
         image: mysql:8
         env:
@@ -121,13 +136,16 @@ jobs:
           done
           echo "MinIO never became reachable" && docker logs minio && exit 1
 
-      # MySQL, MariaDB, SQL Server, Oracle and MinIO run against the servers
-      # above.
-      # The live Postgres tests still skip — EIYE_TEST_PG_DSN is unset — so a
-      # green run does not exercise the Postgres connector against a real server.
-      # SQLite needs no variable: its "server" is a file each test creates.
+      # Every SQL connector now runs against a real server here. SQLite needs no
+      # variable: its "server" is a file each test creates.
+      #
+      # Each SQL DSN below is an *admin* credential on purpose. The connectors
+      # refuse an admin login, so the tests use it to provision a read-only one
+      # and point the connector at that — which is both how an operator is meant
+      # to deploy them and what makes "it refuses a writable login" testable.
       - name: Test
         env:
+          EIYE_TEST_PG_DSN: postgresql://postgres:eiye@127.0.0.1:5432/t
           EIYE_TEST_MYSQL_DSN: mysql://root:eiye@127.0.0.1:3306/t
           EIYE_TEST_MARIADB_DSN: mysql://root:eiye@127.0.0.1:3307/t
           EIYE_TEST_MSSQL_DSN: sqlserver://sa:eiyeTest%212026@127.0.0.1:1433/eiyetest

@@ -151,8 +151,12 @@ This is a **security/governance product**. The first three guarantees must hold
 high-severity:
 
 1. **Read-only.** Every connector states its own mechanism, because they do not
-   generalise: Postgres runs inside a `readonly=True` transaction *and* wraps
-   user SQL in a bounding subquery; SQLite is opened `mode=ro` + `query_only`;
+   generalise: Postgres layers a non-writing login over a `readonly=True`
+   transaction and a bounding subquery — the transaction covers DDL, unlike
+   MySQL's, but not `COPY ... TO PROGRAM` (the wrapper stops that) and not
+   `dblink`, which opens a second session the transaction never reaches, so the
+   login is the boundary here too and a superuser DSN is refused;
+   SQLite is opened `mode=ro` + `query_only`;
    MySQL layers a non-writing login over a read-only transaction that covers DML
    but not DDL; SQL Server has no read-only transaction at all and rests on a
    login verified at every connect; Oracle deliberately runs *no* read-only
