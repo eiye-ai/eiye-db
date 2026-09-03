@@ -325,7 +325,12 @@ eiye_db was scaffolded inside `../OpenPlanter` on 2026-07-20. Load-bearing facts
   test-first. Mine the generators for *design intent* only.
 - The canonical clean `GOALS.md`/`TODO.md` came from `OpenPlanter/eiye_db/`; the
   originals here were shell-heredoc-mangled and restored (commit `8f43834`).
-- **`GOALS.md` and `TODO.md` are edited locally but NEVER committed or pushed.**
+- **The local planning docs are edited but NEVER committed or pushed:**
+  `GOALS.md`, `TODO.md`, `PRD.md`, `NEXT_CONNECTORS.md`, `INDEPENDENT_TEST_PLAN.md`,
+  `INDEPENDENT_TEST_REPORT.md`, `docs/SITE_MOVED.md` (all in `.gitignore`, so the
+  rule survives a fresh clone), plus `AUTH_HARDENING.md`, `NAMED_KEYS.md`,
+  `research-report.md` and `dogfood_out.txt` in `.git/info/exclude`, which
+  protect only this machine.
   Stage commits by explicit file name; never `git add -A/-u`.
 - OpenPlanter had **no packaged entity-resolution engine** — but its
   investigation scripts held genuinely good fuzzy matching (normalization,
