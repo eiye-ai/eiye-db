@@ -1,12 +1,32 @@
-"""SQLite metadata store: datasource registry and audit log."""
+"""SQLite metadata store: datasource registry and audit log.
 
+Schema changes go through Alembic (`backend/alembic/`), not through editing a
+model and hoping `create_all` notices. It will not: `create_all` adds missing
+*tables* and never alters an existing one, so a column added to a model would
+simply be absent on every database that already existed.
+
+Both paths are kept, and `test_migrations.py` asserts they agree — a fresh
+database is built by `create_all` and then stamped at head, while an existing
+one is moved forward by `alembic upgrade head`. If those two ever diverge, the
+drift test fails rather than a deployment discovering it.
+"""
+
+import logging
 from contextlib import contextmanager
 from datetime import datetime
+from functools import cache
+from pathlib import Path
 
-from sqlalchemy import JSON, Boolean, DateTime, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import JSON, Boolean, DateTime, String, Text, UniqueConstraint, create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from eiye_db.config import settings
+
+log = logging.getLogger(__name__)
+
+#: Where the migration scripts live, resolved from this file so it does not
+#: depend on the working directory a deployment happens to start in.
+ALEMBIC_DIR = Path(__file__).resolve().parent.parent / "alembic"
 
 
 class Base(DeclarativeBase):
@@ -132,6 +152,89 @@ def configure(url: str | None = None):
     _engine = create_engine(url, connect_args=connect_args)
     Base.metadata.create_all(_engine)
     return _engine
+
+
+def _alembic_config(url: str):
+    """An Alembic config pointed at this deployment's own scripts and database.
+
+    Built in code rather than read from alembic.ini so the runtime checks work
+    from any working directory — a deployment started by systemd is not
+    necessarily sitting in `backend/`.
+    """
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(ALEMBIC_DIR))
+    cfg.set_main_option("sqlalchemy.url", url)
+    return cfg
+
+
+def current_revision(engine) -> str | None:
+    """The revision this database is stamped at, or None if it is unversioned."""
+    from alembic.migration import MigrationContext
+
+    with engine.connect() as connection:
+        return MigrationContext.configure(connection).get_current_revision()
+
+
+@cache
+def head_revision() -> str | None:
+    """The newest revision on disk.
+
+    Cached: it is a property of the code, not of any database, so it cannot
+    change while the process runs. Reading it uncached cost the test suite about
+    two seconds, because every `TestClient` boots the app and each boot reloaded
+    the whole script directory.
+    """
+    from alembic.script import ScriptDirectory
+
+    return ScriptDirectory.from_config(_alembic_config("sqlite://")).get_current_head()
+
+
+def ensure_versioned(engine=None) -> str:
+    """Reconcile the database with the migration history, and report what it found.
+
+    Three states, and only one of them needs an operator:
+
+    - **unversioned and empty of our tables** — nothing was there; `configure`
+      has just built the current schema, so stamp it at head. A fresh install
+      therefore ends up properly versioned with no extra step.
+    - **unversioned but already carrying our tables** — a database created by
+      an earlier version, before migrations existed. Also stamped at head: its
+      schema matches, because that release's `create_all` built the same tables
+      the initial revision does, which the drift test pins.
+    - **stamped, but behind head** — a real pending upgrade. Warned about, with
+      the command, and *not* applied: migrating someone's database as a side
+      effect of starting a process is how two replicas booting at once corrupt
+      a schema.
+
+    Returns one of "stamped", "current", or "behind" so a caller (and a test)
+    can tell which happened.
+    """
+    from alembic import command
+
+    engine = engine or get_engine()
+    head = head_revision()
+    current = current_revision(engine)
+    if current is None:
+        command.stamp(_alembic_config(str(engine.url.render_as_string(hide_password=False))), "head")
+        existing = [t for t in inspect(engine).get_table_names() if t in Base.metadata.tables]
+        log.info(
+            "stamped the metadata store at %s (%s)",
+            head,
+            "fresh database" if not existing else "existing schema, pre-migrations",
+        )
+        return "stamped"
+    if current == head:
+        return "current"
+    log.warning(
+        "the metadata store is at revision %s but this build expects %s. Schema changes are NOT "
+        "applied at boot, deliberately — run `alembic upgrade head` from backend/ before relying "
+        "on anything that needs the newer schema.",
+        current,
+        head,
+    )
+    return "behind"
 
 
 def get_engine():

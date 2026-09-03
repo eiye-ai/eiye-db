@@ -1,0 +1,16 @@
+Schema migrations for eiye_db's metadata store.
+
+  cd backend
+  alembic current                                  # where this database is
+  alembic upgrade head                             # apply pending revisions
+  alembic revision --autogenerate -m "what changed"  # after editing a db.py model
+
+The database URL comes from the application's own settings (EIYE_DATABASE_URL).
+alembic.ini ships with sqlalchemy.url blank on purpose, so a deployment has
+exactly one place that says which database it uses. Override a one-off with
+`alembic -x url=... upgrade head`.
+
+Editing a model without generating a revision is a bug, not a shortcut:
+create_all adds missing tables and never alters an existing one, so the column
+would be absent on every database that already exists.
+test_migrations.py::test_migrations_match_the_models fails when the two drift.

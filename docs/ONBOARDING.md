@@ -82,7 +82,7 @@ backend/eiye_db/
                    confluence.py/jira.py (atlassian.py shared)
   api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (395 pass, 37 skipped on a bare install); conftest gives
+backend/tests/     pytest suite (403 pass, 37 skipped on a bare install); conftest gives
                    a fresh DB + client per test; readonly_guards.py enforces the
                    structural read-only tier (REST / S3 / filesystem)
 frontend/          React + Vite UI: datasource management, "Semantic model" review, and
@@ -91,6 +91,8 @@ examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
 scripts/                quickstart.{py,sh}, mint_key.py (named keys), grant.py (allow
                         policies for default-deny), seed_example_policies.py, mcp_dogfood.sh
+backend/alembic/         schema migrations; env.py takes the URL from the app's own
+                        settings, not from alembic.ini (which ships blank)
 .github/workflows/ci.yml  pytest + ruff on a 3.11/3.12 matrix, plus a frontend
                         build job (npm ci + tsc --noEmit + vite build)
 ```
@@ -127,7 +129,7 @@ default-deny each distinct id an agent claims needs its own grant.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 395 pass, 37 skipped (see below on the skips)
+pytest -q                       # 403 pass, 37 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -157,6 +159,23 @@ see redaction + audit → connect an MCP client). Requires Python **3.11+**
 (uses `StrEnum`, `X | Y` unions, `asyncio.timeout`).
 
 ## Load-bearing invariants — do not break these
+
+**0. A model change is only half a schema change.** `db.Base` models and
+`backend/alembic/versions/` must agree, because `create_all` adds missing
+*tables* and never alters an existing one — so a column added to a model is
+simply absent on every database that already exists. Generate the revision in
+the same change:
+
+```bash
+cd backend && alembic revision --autogenerate -m "<what changed>"
+```
+
+`test_migrations.py::test_migrations_match_the_models` runs the chain and asserts
+Alembic would autogenerate nothing further, so drift fails there rather than on
+a deployment. Boot warns when a database is behind head and deliberately does
+not upgrade it; `db.ensure_versioned` stamps a fresh or pre-migrations database
+so the first real migration has a baseline.
+
 
 This is a **security/governance product**. The first three guarantees must hold
 **unconditionally** on *every* access path (REST and MCP). A gap in any is
@@ -369,7 +388,7 @@ rather than trusting it.
 
 1. Read this file, then `git log --stat -8`.
 2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
-   invariants above still hold. On a bare install that is 395 pass, 37 skipped;
+   invariants above still hold. On a bare install that is 403 pass, 37 skipped;
    installing an optional extra or pointing `EIYE_TEST_*` at a live server
    moves both numbers — and not in the same direction, since a live server
    turns skips into passes. Compare against your own last run in the same
