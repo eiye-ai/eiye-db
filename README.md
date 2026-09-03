@@ -340,6 +340,7 @@ subject that matches nothing reads as configured and is not.
 | File System | Files (CSV, text, PDF, XLSX) | structural | ✅ Available (root-scoped, schema inference, PII-redacted) |
 | S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | structural | ✅ Available (prefix-scoped, list + get only — see below) |
 | REST API | HTTP API | structural | ✅ Available (GET-only, OpenAPI discovery) |
+| Confluence | Wiki (Cloud) | structural | ✅ Available (operator API token, space-scoped, GET-only — see below) |
 
 ### The two read-only claims, and why they are not the same claim
 
@@ -505,6 +506,52 @@ which `mode=ro` alone would not cover.
 Register it with an **absolute** path: `{"path": "/srv/data/app.db"}`. A file that
 is not there is an error rather than a new empty database, which is the point of
 opening read-only rather than checking first.
+
+### Confluence is Cloud, space-scoped, and GET-only
+
+```bash
+pip install -e backend    # no extra: it speaks HTTP, like the REST connector
+```
+
+Register it with the site URL, the operator's account email, and an API token
+minted at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens):
+
+```json
+{
+  "base_url": "https://your-site.atlassian.net",
+  "email": "ops@example.com",
+  "api_token": "...",
+  "space_key": "ENG"
+}
+```
+
+`base_url` accepts the URL with or without the trailing `/wiki`. **`space_key` is
+optional but is the point** — it confines discovery *and every query* to one
+space, the way `prefix` does for S3 and `root` does for the filesystem, so a
+datasource can expose one space without exposing the site. The scope holds on
+page ids too: a caller who knows the id of a page in another space is refused
+rather than served.
+
+Each space becomes a table. `{"space": "ENG"}` lists that space's pages as
+metadata; `{"page_id": "123"}` returns one page with its text, converted from
+Confluence storage format. Listing deliberately does not fetch bodies — a space
+of a thousand pages would otherwise be a thousand extra requests.
+
+**Cloud, not Data Center.** Data Center was the original plan, to avoid eiye
+operating an OAuth hop on a customer's behalf. Cloud turns out to meet that
+constraint the same way: the API token is minted and held by the operator,
+exactly like a database DSN. Data Center meanwhile has no official container
+image and needs a licence Atlassian stopped self-serving in March 2026.
+
+Two things worth knowing before you deploy it:
+
+- **Atlassian API tokens expire after one year.** Renewal is a calendar item, not
+  an error you will see coming.
+- **The token carries its account's own permissions.** Confluence has no
+  read-only credential, so this connector's read-only guarantee is entirely the
+  structural one above — it issues GET and nothing else, enforced by the test
+  suite. Give it an account that can see only what it should read, and use
+  `space_key` as well.
 
 ### S3 / MinIO is scoped by prefix, and only ever lists and gets
 

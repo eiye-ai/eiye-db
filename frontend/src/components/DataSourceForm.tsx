@@ -23,6 +23,9 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   const [accessKeyId, setAccessKeyId] = useState((existing?.config.access_key_id as string) ?? "");
   const [secretAccessKey, setSecretAccessKey] = useState((existing?.config.secret_access_key as string) ?? "");
   const [baseUrl, setBaseUrl] = useState((existing?.config.base_url as string) ?? "");
+  const [email, setEmail] = useState((existing?.config.email as string) ?? "");
+  const [apiToken, setApiToken] = useState((existing?.config.api_token as string) ?? "");
+  const [spaceKey, setSpaceKey] = useState((existing?.config.space_key as string) ?? "");
   const [headers, setHeaders] = useState(
     existing?.config.headers ? JSON.stringify(existing.config.headers, null, 2) : "",
   );
@@ -46,6 +49,17 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
         cfg.access_key_id = accessKeyId.trim();
         cfg.secret_access_key = secretAccessKey.trim();
       }
+      return cfg;
+    }
+    if (type === "confluence") {
+      const cfg: Record<string, unknown> = {
+        base_url: baseUrl.trim(),
+        email: email.trim(),
+        api_token: apiToken.trim(),
+      };
+      // Omitted rather than sent empty: an empty space_key would read as a
+      // scope naming nothing, and the connector refuses that at test time.
+      if (spaceKey.trim()) cfg.space_key = spaceKey.trim();
       return cfg;
     }
     const cfg: Record<string, unknown> = { base_url: baseUrl.trim() };
@@ -215,6 +229,44 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
             <span className="hint">
               Leave both empty to use the host’s AWS credentials (instance role, profile, environment). eiye only ever
               calls ListObjectsV2 and GetObject — scope the key to those two anyway.
+            </span>
+          </label>
+        </>
+      )}
+
+      {type === "confluence" && (
+        <>
+          <label>
+            Site URL
+            <input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://your-site.atlassian.net"
+            />
+            <span className="hint">Cloud only. With or without the trailing /wiki.</span>
+          </label>
+          <label>
+            Account email
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ops@example.com" />
+          </label>
+          <label>
+            API token
+            <input
+              type="password"
+              value={apiToken}
+              onChange={(e) => setApiToken(e.target.value)}
+              placeholder="from id.atlassian.com"
+            />
+            <span className="hint">
+              The token carries its account&rsquo;s own permissions and expires after a year. Give eiye an account that
+              can see only what it should read.
+            </span>
+          </label>
+          <label>
+            Space key (optional)
+            <input value={spaceKey} onChange={(e) => setSpaceKey(e.target.value)} placeholder="ENG" />
+            <span className="hint">
+              Confines discovery and every query to one space, page ids included. Leave empty to expose the whole site.
             </span>
           </label>
         </>
