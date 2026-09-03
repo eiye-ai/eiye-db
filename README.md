@@ -330,16 +330,55 @@ subject that matches nothing reads as configured and is not.
 
 ## Datasource Connectors
 
-| Connector | Type | Status |
-|-----------|------|--------|
-| PostgreSQL | SQL DB | ✅ Available (requires a read-only login; read-only transactions — see below) |
-| MySQL / MariaDB | SQL DB | ✅ Available (requires a login with no write privileges — see below) |
-| SQL Server | SQL DB | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
-| SQLite | SQL DB (file) | ✅ Available (opened `mode=ro`; no driver to install) |
-| Oracle | SQL DB | ✅ Available (requires a read-only login; no Instant Client — see below) |
-| File System | Files (CSV, text, PDF, XLSX) | ✅ Available (root-scoped, schema inference, PII-redacted) |
-| S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | ✅ Available (prefix-scoped, list + get only — see below) |
-| REST API | HTTP API | ✅ Available (GET-only, OpenAPI discovery) |
+| Connector | Type | Read-only claim | Status |
+|-----------|------|-----------------|--------|
+| PostgreSQL | SQL DB | server-enforced | ✅ Available (requires a read-only login; read-only transactions — see below) |
+| MySQL / MariaDB | SQL DB | server-enforced | ✅ Available (requires a login with no write privileges — see below) |
+| SQL Server | SQL DB | server-enforced | ✅ Available (SQL auth; requires a login with no write permissions — see below) |
+| SQLite | SQL DB (file) | server-enforced | ✅ Available (opened `mode=ro` + `PRAGMA query_only`; no driver to install) |
+| Oracle | SQL DB | server-enforced | ✅ Available (requires a read-only login; no Instant Client — see below) |
+| File System | Files (CSV, text, PDF, XLSX) | structural | ✅ Available (root-scoped, schema inference, PII-redacted) |
+| S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | structural | ✅ Available (prefix-scoped, list + get only — see below) |
+| REST API | HTTP API | structural | ✅ Available (GET-only, OpenAPI discovery) |
+
+### The two read-only claims, and why they are not the same claim
+
+Every connector above is read-only. They are not read-only in the same way, and
+collapsing that into one badge would be the more comfortable lie.
+
+**Server-enforced.** The database itself refuses to write, whatever eiye sends
+it. The connector verifies at every connect that the login it was given cannot
+write, and the mechanism differs per engine because the engines differ — a
+Postgres read-only transaction covers DDL, MySQL's does not, SQL Server has none
+at all, and Oracle's would block nothing the query wrapper does not already.
+Each engine's mechanism is exercised against a real server in CI and
+mutation-tested: the guard is removed, and the suite has to go red.
+
+**Structural.** There is no server to refuse anything — a GET-only HTTP client,
+an S3 credential, a directory of files. The guarantee is that the connector
+never asks to write. That is a weaker claim than the one above and it is
+labelled differently for that reason.
+
+It is not, however, an unverified claim. Each structural connector's whole test
+suite runs behind a guard sitting at the boundary it actually crosses:
+
+| connector | boundary | guard |
+|-----------|----------|-------|
+| REST API | HTTP transport | any method other than GET or HEAD fails the test |
+| S3 / MinIO | botocore `before-call` | any operation outside `ListObjectsV2` / `GetObject` fails the test, before the request leaves the process |
+| File System | `open()` and `Path.open()` | any mode requesting write access fails the test |
+
+Add a `POST`, a `PutObject` or an `open(..., "w")` anywhere on an exercised path
+and the build breaks. The guards are themselves mutation-tested — each one has
+a real write introduced into the connector to confirm it catches it — and they
+raise outside the exception hierarchy the connectors catch, so the connectors'
+own error handling cannot absorb them.
+
+What the structural tier does **not** prove is a path the tests never take. A
+branch with no coverage could still hide a write. It is a coverage-bounded
+proof, which is a long way past "read the code and trust it" and still short of
+a server refusing you. Where the honest answer is "we cannot check this", it is
+said plainly — see the S3 section on why the credential itself is not probed.
 
 Drivers for connectors beyond the original three ship as extras, so a deployment
 installs only what it connects to:
