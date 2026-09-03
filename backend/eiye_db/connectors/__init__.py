@@ -69,4 +69,8 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.rest import RestConnector
 
         return RestConnector(config)
+    if type == DataSourceType.CONFLUENCE:
+        from eiye_db.connectors.confluence import ConfluenceConnector
+
+        return ConfluenceConnector(config)
     raise ConnectorError(f"no connector implemented for type '{type}'")

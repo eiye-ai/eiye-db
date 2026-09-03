@@ -32,6 +32,10 @@ class DataSourceType(StrEnum):
     # the difference is an endpoint URL, not a protocol.
     S3 = "s3"
     REST_API = "rest_api"
+    # Confluence Cloud only. Data Center is a different product with a
+    # different auth story, and shipping both behind one member would hide
+    # that from whoever registers a source.
+    CONFLUENCE = "confluence"
 
 
 class ConnectionStatus(StrEnum):
@@ -186,9 +190,10 @@ class ResolveRequest(BaseModel):
 
 class SourceQueryRequest(BaseModel):
     """A source-scoped query. `request` is connector-specific:
-    postgresql / mysql / sqlserver / sqlite: {"sql": "SELECT ..."} ·
+    postgresql / mysql / sqlserver / sqlite / oracle: {"sql": "SELECT ..."} ·
     filesystem: {"path": "rel/file.csv"} · s3: {"key": "rel/object.csv"} ·
-    rest_api: {"path": "/endpoint", "params": {...}}."""
+    rest_api: {"path": "/endpoint", "params": {...}} ·
+    confluence: {"space": "ENG"} or {"page_id": "123"}."""
 
     datasource_id: str
     request: dict[str, Any]
