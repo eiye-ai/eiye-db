@@ -1,4 +1,11 @@
-"""Filesystem connector tests."""
+"""Filesystem connector tests.
+
+Every connector built in this module is wrapped so its calls run under the
+file-write guard: an `open` asking for write access on any exercised path raises
+`WriteAttempted` and fails the test. That makes "this connector only ever reads"
+a property the suite enforces rather than one the docstring asserts. See
+`tests/readonly_guards.py` for what that does and does not prove.
+"""
 
 import asyncio
 
@@ -7,6 +14,27 @@ from openpyxl import Workbook
 
 from eiye_db.connectors.base import ConnectorError
 from eiye_db.connectors.filesystem import FilesystemConnector, infer_type
+from tests.readonly_guards import WriteAttempted, guard_connector_files, guard_file_writes
+
+
+@pytest.fixture(autouse=True)
+def modes_seen(monkeypatch):
+    """Guard every FilesystemConnector this module constructs.
+
+    Patched at the class rather than applied per call site: there are a dozen
+    places building a connector here and one that forgets would be a silent
+    hole. The guard is active only *inside* connector calls, which is what lets
+    the fixtures below still write their sample files.
+    """
+    seen: list[str] = []
+    original_init = FilesystemConnector.__init__
+
+    def init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        guard_connector_files(self, seen)
+
+    monkeypatch.setattr(FilesystemConnector, "__init__", init)
+    return seen
 
 
 @pytest.fixture
@@ -159,3 +187,37 @@ def test_query_broken_pdf_raises_connector_error(tmp_path):
     conn = FilesystemConnector({"root": str(tmp_path)})
     with pytest.raises(ConnectorError, match="PDF"):
         asyncio.run(conn.query({"path": "broken.pdf"}, limit=5))
+
+
+# --- the guard itself ---------------------------------------------------------
+
+
+def test_guard_is_not_inert(data_dir, modes_seen):
+    """A guard that never fires cannot be told apart from a guard that is
+    broken. Prove the connector's ordinary work actually opens files through
+    it."""
+    conn = FilesystemConnector({"root": str(data_dir)})
+    asyncio.run(conn.discover_schema())
+    asyncio.run(conn.query({"path": "people.csv"}, limit=10))
+    assert modes_seen, "the guard saw no file opens at all"
+    assert all("w" not in m and "a" not in m and "+" not in m for m in modes_seen)
+
+
+@pytest.mark.parametrize("mode", ["w", "a", "x", "r+", "wb"])
+def test_guard_refuses_a_write(tmp_path, mode):
+    """And prove it would catch one. This is the failure a future
+    `open(..., "w")` in the connector or an extractor would produce."""
+    with pytest.raises(WriteAttempted), guard_file_writes():
+        open(tmp_path / "scratch", mode)
+
+
+def test_guard_survives_the_extractors_swallowing_exceptions(tmp_path):
+    """documents.py catches `Exception` in six places so one malformed file
+    cannot end a discovery pass. WriteAttempted is a BaseException so those
+    handlers cannot quietly absorb it — pin that, because the guard is worthless
+    if they can."""
+    with pytest.raises(WriteAttempted), guard_file_writes():
+        try:
+            open(tmp_path / "scratch", "w")
+        except Exception:  # noqa: BLE001 - deliberately as broad as documents.py
+            pytest.fail("an `except Exception:` swallowed the guard")

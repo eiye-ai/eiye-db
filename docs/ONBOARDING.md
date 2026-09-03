@@ -81,8 +81,9 @@ backend/eiye_db/
                    filesystem/s3 (documents.py shared), rest.py
   api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (296 pass, 11 skipped on a bare install); conftest gives
-                   a fresh DB + client per test
+backend/tests/     pytest suite (310 pass, 37 skipped on a bare install); conftest gives
+                   a fresh DB + client per test; readonly_guards.py enforces the
+                   structural read-only tier (REST / S3 / filesystem)
 frontend/          React + Vite UI: datasource management, "Semantic model" review, and
                    "Access" (subject review, grant, policy list) — an operator console
 examples/demo_data/     demo CSVs used by the README quickstart
@@ -115,7 +116,7 @@ default-deny each distinct id an agent claims needs its own grant.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 296 pass, 11 skipped (see below on the skips)
+pytest -q                       # 310 pass, 37 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -150,8 +151,21 @@ This is a **security/governance product**. The first three guarantees must hold
 **unconditionally** on *every* access path (REST and MCP). A gap in any is
 high-severity:
 
-1. **Read-only.** Every connector states its own mechanism, because they do not
-   generalise: Postgres layers a non-writing login over a `readonly=True`
+1. **Read-only.** Two different claims, named as such in the README and never
+   averaged into one badge. *Server-enforced* (the five SQL connectors): the
+   engine refuses the write, the login is verified at every connect, and the
+   mechanism is exercised against a live server in CI. *Structural* (REST, S3,
+   filesystem): there is no server to refuse anything, so the guarantee is that
+   the connector never asks — enforced by the guards in
+   `backend/tests/readonly_guards.py`, which fail the build on a non-GET
+   request, a non-read S3 operation, or a write-mode `open` along any exercised
+   path. Those guards raise a `BaseException` on purpose: `documents.py` alone
+   catches `Exception` six times, and a guard application code can swallow
+   proves nothing. The structural proof is bounded by coverage — an untested
+   branch could still hide a write — and that limit is stated in the README
+   rather than smoothed over.
+
+   Every connector states its own mechanism, because they do not generalise: Postgres layers a non-writing login over a `readonly=True`
    transaction and a bounding subquery — the transaction covers DDL, unlike
    MySQL's, but not `COPY ... TO PROGRAM` (the wrapper stops that) and not
    `dblink`, which opens a second session the transaction never reaches, so the
@@ -333,8 +347,10 @@ rather than trusting it.
 
 1. Read this file, then `git log --stat -8`.
 2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
-   invariants above still hold. On a bare install that is 296 pass, 11 skipped;
+   invariants above still hold. On a bare install that is 310 pass, 37 skipped;
    installing an optional extra or pointing `EIYE_TEST_*` at a live server
-   raises both numbers, so compare against your own last run, not a constant.
+   moves both numbers — and not in the same direction, since a live server
+   turns skips into passes. Compare against your own last run in the same
+   environment, never against a constant.
 3. `TODO.md` shows what's done (Tier 0/1/2 complete) and the market-gated
    backlog; `GOALS.md` has the vision and Semantic Layer Strategy section.

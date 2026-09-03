@@ -22,6 +22,28 @@ from botocore.exceptions import ClientError  # noqa: E402  (after importorskip)
 
 from eiye_db.connectors.s3 import S3Connector  # noqa: E402  (after importorskip)
 
+from tests.readonly_guards import (  # noqa: E402  (after importorskip)
+    S3_READ_OPERATIONS,
+    WriteAttempted,
+    guard_s3_client,
+)
+
+
+@pytest.fixture(autouse=True)
+def s3_operations_seen(monkeypatch):
+    """Guard every real boto3 client this connector builds.
+
+    Hooks botocore's `before-call`, so an operation outside the read-only
+    allowlist is refused before the request leaves the process rather than
+    merely noticed afterwards. The offline tests replace `_client` wholesale
+    with `FakeS3`, which exposes no write method at all — see
+    `test_the_fake_client_cannot_write` — so this guards the live path.
+    """
+    seen: list[str] = []
+    original = S3Connector._client
+    monkeypatch.setattr(S3Connector, "_client", lambda self, st: guard_s3_client(original(self, st), seen))
+    return seen
+
 CSV = b"name,age\nAlice,30\nBob,25\n"
 NOTES = b"# Notes\nemail: x@y.com\n"
 
@@ -300,3 +322,52 @@ def test_live_query(live_bucket, live_config):
 def test_live_query_outside_the_prefix_finds_nothing(live_bucket, live_config):
     with pytest.raises(ConnectorError, match="cannot read"):
         asyncio.run(S3Connector(live_config).query({"key": "../elsewhere/secret.csv"}, limit=10))
+
+
+# --- the guard itself ---------------------------------------------------------
+
+
+def test_the_fake_client_cannot_write():
+    """The offline tests do not need the botocore hook, because the fake they
+    run against has no write method to call. Pin that, so a future convenience
+    method on FakeS3 cannot quietly weaken every offline test at once."""
+    surface = {n for n in dir(FakeS3) if not n.startswith("_") and n != "close"}
+    assert surface <= {"objects", "calls"} | {
+        "list_objects_v2",
+        "get_object",
+    }, f"FakeS3 grew a method outside the read-only surface: {surface}"
+
+
+def test_guard_refuses_a_write():
+    """A write is refused before the request leaves the process — the endpoint
+    here is dead, so reaching the socket at all would be a guard failure."""
+    client = boto3.client(
+        "s3",
+        endpoint_url="http://127.0.0.1:1",
+        region_name="us-east-1",
+        aws_access_key_id="x",
+        aws_secret_access_key="y",
+    )
+    guard_s3_client(client)
+    try:
+        for call in (
+            lambda: client.put_object(Bucket="b", Key="k", Body=b"x"),
+            lambda: client.delete_object(Bucket="b", Key="k"),
+            lambda: client.create_bucket(Bucket="b"),
+        ):
+            with pytest.raises(WriteAttempted):
+                call()
+    finally:
+        client.close()
+
+
+def test_live_guard_is_not_inert(live_bucket, live_config, s3_operations_seen):
+    """A guard that never fires cannot be told apart from a guard that is
+    broken. Prove the connector's ordinary work goes through it, and that every
+    operation it issued was a read."""
+    asyncio.run(S3Connector(live_config).discover_schema())
+    asyncio.run(S3Connector(live_config).query({"key": "people.csv"}, limit=1))
+    assert s3_operations_seen, "the guard saw no S3 operations at all"
+    assert set(s3_operations_seen) <= S3_READ_OPERATIONS
+    assert "ListObjectsV2" in s3_operations_seen
+    assert "GetObject" in s3_operations_seen

@@ -1,4 +1,10 @@
-"""REST connector tests using httpx.MockTransport."""
+"""REST connector tests using httpx.MockTransport.
+
+Every connector here is built on a `GetOnlyTransport`, so the GET-only claim is
+enforced by the test suite rather than asserted in prose: any non-GET request on
+any exercised path raises `WriteAttempted` and fails the test. See
+`tests/readonly_guards.py` for what that does and does not prove.
+"""
 
 import asyncio
 
@@ -7,6 +13,7 @@ import pytest
 
 from eiye_db.connectors.base import ConnectorError
 from eiye_db.connectors.rest import RestConnector
+from tests.readonly_guards import GetOnlyTransport, WriteAttempted
 
 OPENAPI = {
     "paths": {
@@ -32,8 +39,13 @@ def handler(request: httpx.Request) -> httpx.Response:
 
 
 @pytest.fixture
-def conn():
-    return RestConnector({"base_url": "http://test.local"}, transport=httpx.MockTransport(handler))
+def transport():
+    return GetOnlyTransport(httpx.MockTransport(handler))
+
+
+@pytest.fixture
+def conn(transport):
+    return RestConnector({"base_url": "http://test.local"}, transport=transport)
 
 
 def test_test_connection(conn):
@@ -64,3 +76,28 @@ def test_missing_base_url():
     conn = RestConnector({})
     with pytest.raises(ConnectorError, match="base_url"):
         asyncio.run(conn.test_connection())
+
+
+# --- the guard itself ---------------------------------------------------------
+
+
+def test_guard_is_not_inert(conn, transport):
+    """A guard that never fires cannot be told apart from a guard that is
+    broken. Prove the connector's ordinary work actually goes through it."""
+    asyncio.run(conn.discover_schema())
+    asyncio.run(conn.query({"path": "/users"}, limit=1))
+    assert transport.methods_seen == ["GET", "GET"]
+
+
+def test_guard_refuses_a_write(transport):
+    """And prove it would catch one. This is the failure a future POST in the
+    connector would produce — WriteAttempted is a BaseException precisely so
+    the connector's own `except httpx.HTTPError` cannot turn it into a tidy
+    ConnectorError."""
+
+    async def post():
+        async with httpx.AsyncClient(transport=transport, base_url="http://test.local") as client:
+            await client.post("/users", json={})
+
+    with pytest.raises(WriteAttempted, match="POST"):
+        asyncio.run(post())
