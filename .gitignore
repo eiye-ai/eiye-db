@@ -27,3 +27,8 @@ eiye-license-signing-key*
 # the rule survives a fresh clone instead of protecting only this machine.
 GOALS.md
 TODO.md
+PRD.md
+NEXT_CONNECTORS.md
+INDEPENDENT_TEST_PLAN.md
+INDEPENDENT_TEST_REPORT.md
+docs/SITE_MOVED.md
