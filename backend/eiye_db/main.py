@@ -89,6 +89,11 @@ async def lifespan(_app: FastAPI):
     entitlements = license.current()
     _log_license(entitlements)
     db.configure()
+    # Reconciles the schema with the migration history: stamps a database that
+    # predates migrations, and warns — never silently upgrades — when one is
+    # behind head. Applying migrations as a side effect of starting a process
+    # is how two replicas booting together corrupt a schema.
+    db.ensure_versioned()
     if not security.auth_configured():
         import logging
 

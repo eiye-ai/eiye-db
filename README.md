@@ -623,6 +623,46 @@ Two limits worth knowing, because neither is silent: discovery lists at most
 listed with no fields and still queryable), and a query refuses an object over
 64 MiB rather than returning a truncated prefix of it.
 
+## Upgrading a deployment (schema migrations)
+
+The metadata store — the datasource registry, semantic relationships, metric
+catalog, ABAC policies and audit log — is versioned with Alembic. A fresh
+install needs nothing: the schema is created and stamped at the current revision
+on first boot, and a database created by a release from before migrations
+existed is stamped in place, rows intact.
+
+When you pull a build whose schema moved, boot **warns and does not migrate**:
+
+```
+the metadata store is at revision abc123 but this build expects def456.
+Schema changes are NOT applied at boot, deliberately — run
+`alembic upgrade head` from backend/ before relying on anything that needs
+the newer schema.
+```
+
+That is deliberate. Migrating a database as a side effect of starting a process
+is how two replicas booting at once corrupt a schema, so the upgrade is a step
+you take:
+
+```bash
+cd backend
+alembic current          # where this database is
+alembic history          # what exists
+alembic upgrade head     # apply it
+```
+
+The database comes from `EIYE_DATABASE_URL`, the same setting the application
+reads — `alembic.ini` ships with no URL in it so there is exactly one place that
+says which database a deployment uses. To point a one-off somewhere else:
+
+```bash
+alembic -x url=sqlite:////srv/eiye/other.db upgrade head
+```
+
+Back up before upgrading. `alembic downgrade -1` reverses one revision and the
+test suite checks the chain is reversible, but a restorable backup is the thing
+you actually want when a migration surprises you.
+
 ## Pricing Tiers
 
 | Tier | Datasources | Queries/mo | Price |
