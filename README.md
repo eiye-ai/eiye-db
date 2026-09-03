@@ -341,6 +341,7 @@ subject that matches nothing reads as configured and is not.
 | S3 / MinIO | Object storage (CSV, text, PDF, XLSX) | structural | ✅ Available (prefix-scoped, list + get only — see below) |
 | REST API | HTTP API | structural | ✅ Available (GET-only, OpenAPI discovery) |
 | Confluence | Wiki (Cloud) | structural | ✅ Available (operator API token, space-scoped, GET-only — see below) |
+| Jira | Issue tracker (Cloud) | structural | ✅ Available (operator API token, project-scoped, GET-only — see below) |
 
 ### The two read-only claims, and why they are not the same claim
 
@@ -552,6 +553,43 @@ Two things worth knowing before you deploy it:
   structural one above — it issues GET and nothing else, enforced by the test
   suite. Give it an account that can see only what it should read, and use
   `space_key` as well.
+
+### Jira is Cloud, project-scoped, and validates every key it puts into JQL
+
+Same account, same API token, same `base_url` as Confluence — register it with
+`project_key` instead of `space_key`:
+
+```json
+{
+  "base_url": "https://your-site.atlassian.net",
+  "email": "ops@example.com",
+  "api_token": "...",
+  "project_key": "ENG"
+}
+```
+
+Each project becomes a table. `{"project": "ENG"}` lists that project's issues
+as metadata; `{"issue_key": "ENG-1"}` returns one issue with its description,
+converted from Atlassian Document Format. As with Confluence, listing does not
+fetch descriptions.
+
+**This connector builds a query language, and that is what makes it different
+from the Confluence one.** A project key reaches JQL as `project = "ENG"`, so a
+key containing a quote could rewrite the query. Keys are validated against the
+shape Jira actually issues before they are interpolated, and anything else is
+refused rather than escaped. Raw JQL is deliberately **not** accepted from
+callers: JQL has no write form, so it is not a write risk, but it would step
+straight past `project_key`.
+
+Two Jira-specific things worth knowing:
+
+- **Pagination is two mechanisms.** Issue search returns an opaque
+  `nextPageToken` with no total; project search still pages by offset and ends
+  on `isLast`. The old `/rest/api/3/search` endpoint that used `startAt` now
+  answers **410 Gone** on Cloud.
+- **`/rest/api/3/search/jql` also has a POST form**, for JQL too long for a
+  query string. It reads identically and would break the GET-only guarantee, so
+  this connector keeps its queries small enough that GET always suffices.
 
 ### S3 / MinIO is scoped by prefix, and only ever lists and gets
 

@@ -22,21 +22,24 @@ filesystem — a governed surface should be able to expose one space without
 exposing the site.
 
 Pagination follows `_links.next`, which carries an opaque cursor and is absent
-on the last page. That is why the HTTP client is based at the site origin rather
-than at `/wiki`: the cursor URLs Confluence returns are site-absolute, so basing
-the client deeper would double the prefix.
+on the last page. Those cursor URLs are site-absolute and already carry `/wiki`,
+which is why `AtlassianCloudConnector._site` reduces `base_url` to the bare
+origin — basing the client any deeper would double the prefix on every paginated
+request.
+
+Auth, the HTTP client and error mapping live in `atlassian.py`, shared with the
+Jira connector. Pagination does not: Jira's issue search returns a bare
+`nextPageToken` rather than a URL, so the two walk differently.
 """
 
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 
 from eiye_db.connectors import documents
-from eiye_db.connectors.base import Connector, ConnectorError
-
-_TIMEOUT_SECONDS = 30
+from eiye_db.connectors.atlassian import AtlassianCloudConnector
+from eiye_db.connectors.base import ConnectorError
 
 # Confluence caps `limit` at 250 for these endpoints; ask for the most per
 # round-trip and let the caller's own limit do the trimming.
@@ -115,72 +118,14 @@ def page_row(page: dict[str, Any], site: str) -> dict[str, Any]:
     }
 
 
-class ConfluenceConnector(Connector):
-    def __init__(self, config: dict[str, Any], transport: httpx.AsyncBaseTransport | None = None):
-        super().__init__(config)
-        self._transport = transport
-
-    # --- config --------------------------------------------------------------
-
-    def _site(self) -> str:
-        """The site origin, with any `/wiki` suffix removed.
-
-        Operators copy the URL out of a browser, which includes `/wiki`, but the
-        cursor URLs Confluence returns are already site-absolute and include it
-        too. Normalising here means both forms of the setting work and neither
-        produces `/wiki/wiki`.
-        """
-        base_url = self.config.get("base_url")
-        if not base_url:
-            raise ConnectorError("confluence config requires 'base_url', e.g. https://your-site.atlassian.net")
-        parts = urlsplit(base_url.rstrip("/"))
-        if parts.scheme not in ("http", "https") or not parts.hostname:
-            raise ConnectorError(f"confluence base_url must be an absolute http(s) URL, got '{base_url}'")
-        path = parts.path.removesuffix("/wiki")
-        return f"{parts.scheme}://{parts.netloc}{path}"
-
-    def _auth(self) -> tuple[str, str]:
-        email = self.config.get("email")
-        token = self.config.get("api_token")
-        if not email or not token:
-            raise ConnectorError(
-                "confluence config requires 'email' and 'api_token'. Mint the token at "
-                "https://id.atlassian.com/manage-profile/security/api-tokens — it is the account's "
-                "own credential, so give eiye an account with access to only what it should read."
-            )
-        return email, token
+class ConfluenceConnector(AtlassianCloudConnector):
+    PRODUCT = "confluence"
 
     def _space_key(self) -> str | None:
         key = self.config.get("space_key")
         return key.strip() if isinstance(key, str) and key.strip() else None
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self._site(),
-            auth=self._auth(),
-            headers={"Accept": "application/json"},
-            timeout=_TIMEOUT_SECONDS,
-            transport=self._transport,
-        )
-
     # --- HTTP ----------------------------------------------------------------
-
-    async def _get(self, client: httpx.AsyncClient, path: str, params: dict | None = None) -> dict:
-        try:
-            resp = await client.get(path, params=params)
-        except httpx.HTTPError as e:
-            raise ConnectorError(f"request to {path} failed: {e}") from e
-        if resp.status_code in (401, 403):
-            raise ConnectorError(
-                f"HTTP {resp.status_code} from {path}: the email or API token was rejected, or the "
-                "account cannot see this content. Atlassian API tokens expire after one year."
-            )
-        if resp.status_code >= 400:
-            raise ConnectorError(f"HTTP {resp.status_code} from {path}")
-        try:
-            return resp.json()
-        except ValueError as e:
-            raise ConnectorError(f"{path} did not return JSON") from e
 
     async def _paginate(
         self, client: httpx.AsyncClient, path: str, params: dict, limit: int

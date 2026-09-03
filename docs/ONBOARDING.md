@@ -78,10 +78,11 @@ backend/eiye_db/
   nl.py            NL→query: deterministic matcher + optional LLM bootstrap (llm_bind)
   metrics.py       operational metrics summary (audit-trail aggregation, admin-only)
   connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite/oracle (sql.py shared),
-                   filesystem/s3 (documents.py shared), rest.py, confluence.py
+                   filesystem/s3 (documents.py shared), rest.py,
+                   confluence.py/jira.py (atlassian.py shared)
   api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (345 pass, 37 skipped on a bare install); conftest gives
+backend/tests/     pytest suite (395 pass, 37 skipped on a bare install); conftest gives
                    a fresh DB + client per test; readonly_guards.py enforces the
                    structural read-only tier (REST / S3 / filesystem)
 frontend/          React + Vite UI: datasource management, "Semantic model" review, and
@@ -116,7 +117,7 @@ default-deny each distinct id an agent claims needs its own grant.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 345 pass, 37 skipped (see below on the skips)
+pytest -q                       # 395 pass, 37 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -161,8 +162,11 @@ high-severity:
    request, a non-read S3 operation, or a write-mode `open` along any exercised
    path. Confluence is the first connector *built* under the structural tier;
    its GET-only transport guard is the whole of its read-only guarantee, since
-   Confluence has no read-only credential to verify. Scope (`space_key`) is the
-   second half of the story there and is enforced on the page-id path too. Those guards raise a `BaseException` on purpose: `documents.py` alone
+   Confluence has no read-only credential to verify. Scope (`space_key`,
+   `project_key`) is the second half of the story for both Atlassian connectors
+   and is enforced on the page-id and issue-key paths too. Jira additionally
+   *builds* JQL, so it validates every key before interpolating one — the only
+   connector outside the SQL family that constructs a query language. Those guards raise a `BaseException` on purpose: `documents.py` alone
    catches `Exception` six times, and a guard application code can swallow
    proves nothing. The structural proof is bounded by coverage — an untested
    branch could still hide a write — and that limit is stated in the README
@@ -355,7 +359,7 @@ rather than trusting it.
 
 1. Read this file, then `git log --stat -8`.
 2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
-   invariants above still hold. On a bare install that is 345 pass, 37 skipped;
+   invariants above still hold. On a bare install that is 395 pass, 37 skipped;
    installing an optional extra or pointing `EIYE_TEST_*` at a live server
    moves both numbers — and not in the same direction, since a live server
    turns skips into passes. Compare against your own last run in the same

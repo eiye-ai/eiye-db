@@ -73,4 +73,8 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.confluence import ConfluenceConnector
 
         return ConfluenceConnector(config)
+    if type == DataSourceType.JIRA:
+        from eiye_db.connectors.jira import JiraConnector
+
+        return JiraConnector(config)
     raise ConnectorError(f"no connector implemented for type '{type}'")

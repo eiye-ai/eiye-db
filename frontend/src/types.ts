@@ -7,7 +7,8 @@ export type DataSourceType =
   | "oracle"
   | "s3"
   | "rest_api"
-  | "confluence";
+  | "confluence"
+  | "jira";
 
 export interface DataSource {
   id: string;
@@ -119,6 +120,7 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
   s3: "S3 / MinIO",
   rest_api: "REST API",
   confluence: "Confluence",
+  jira: "Jira",
 };
 
 // What a source is queried *with*, which is not the same question as what it
