@@ -79,10 +79,11 @@ backend/eiye_db/
   metrics.py       operational metrics summary (audit-trail aggregation, admin-only)
   connectors/      base.py, factory in __init__; postgres/mysql/mssql/sqlite/oracle (sql.py shared),
                    filesystem/s3 (documents.py shared), rest.py,
-                   confluence.py/jira.py (atlassian.py shared)
+                   confluence.py/jira.py (atlassian.py shared), servicenow.py
+                   (http_basic.py shared by all three)
   api.py           REST routes (/api/v1/...), incl. /access/{key_id} access review
   mcp_server.py    stdio MCP server (FastMCP) — 9 tools, same service layer
-backend/tests/     pytest suite (403 pass, 37 skipped on a bare install); conftest gives
+backend/tests/     pytest suite (444 pass, 37 skipped on a bare install); conftest gives
                    a fresh DB + client per test; readonly_guards.py enforces the
                    structural read-only tier (REST / S3 / filesystem)
 frontend/          React + Vite UI: datasource management, "Semantic model" review, and
@@ -129,7 +130,7 @@ default-deny each distinct id an agent claims needs its own grant.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt      # runtime + pytest/ruff
-pytest -q                       # 403 pass, 37 skipped (see below on the skips)
+pytest -q                       # 444 pass, 37 skipped (see below on the skips)
 ruff check .                    # CI gates on this — keep it clean
 uvicorn eiye_db.main:app --reload
 python -m eiye_db.mcp_server     # the stdio MCP server
@@ -388,7 +389,7 @@ rather than trusting it.
 
 1. Read this file, then `git log --stat -8`.
 2. `cd backend && source .venv/bin/activate && pytest -q` — a green suite = the
-   invariants above still hold. On a bare install that is 403 pass, 37 skipped;
+   invariants above still hold. On a bare install that is 444 pass, 37 skipped;
    installing an optional extra or pointing `EIYE_TEST_*` at a live server
    moves both numbers — and not in the same direction, since a live server
    turns skips into passes. Compare against your own last run in the same

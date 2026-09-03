@@ -8,7 +8,8 @@ export type DataSourceType =
   | "s3"
   | "rest_api"
   | "confluence"
-  | "jira";
+  | "jira"
+  | "servicenow";
 
 export interface DataSource {
   id: string;
@@ -121,6 +122,7 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
   rest_api: "REST API",
   confluence: "Confluence",
   jira: "Jira",
+  servicenow: "ServiceNow",
 };
 
 // What a source is queried *with*, which is not the same question as what it

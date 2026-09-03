@@ -27,6 +27,11 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   const [apiToken, setApiToken] = useState((existing?.config.api_token as string) ?? "");
   // Confluence calls it a space and Jira calls it a project; a source is never
   // both, so one field carries whichever this type uses.
+  const [username, setUsername] = useState((existing?.config.username as string) ?? "");
+  const [password, setPassword] = useState((existing?.config.password as string) ?? "");
+  const [tables, setTables] = useState(
+    Array.isArray(existing?.config.tables) ? (existing?.config.tables as string[]).join(", ") : "",
+  );
   const [scopeKey, setScopeKey] = useState(
     ((existing?.config.space_key ?? existing?.config.project_key) as string) ?? "",
   );
@@ -54,6 +59,22 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
         cfg.secret_access_key = secretAccessKey.trim();
       }
       return cfg;
+    }
+    if (type === "servicenow") {
+      // `tables` has no default on purpose — an instance carries thousands, so
+      // the operator names the ones this datasource may read. Sent as a list
+      // rather than the raw string, which is the shape the connector validates.
+      const named = tables.split(",").map((t) => t.trim()).filter(Boolean);
+      if (named.length === 0) {
+        setError("Name at least one table — a ServiceNow datasource has no “all tables” mode.");
+        return null;
+      }
+      return {
+        base_url: baseUrl.trim(),
+        username: username.trim(),
+        password: password.trim(),
+        tables: named,
+      };
     }
     if (type === "confluence" || type === "jira") {
       const cfg: Record<string, unknown> = {
@@ -235,6 +256,43 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
             <span className="hint">
               Leave both empty to use the host’s AWS credentials (instance role, profile, environment). eiye only ever
               calls ListObjectsV2 and GetObject — scope the key to those two anyway.
+            </span>
+          </label>
+        </>
+      )}
+
+      {type === "servicenow" && (
+        <>
+          <label>
+            Instance URL
+            <input
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder="https://acme.service-now.com"
+            />
+          </label>
+          <label>
+            Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="eiye_ro" />
+          </label>
+          <label>
+            Password
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <span className="hint">
+              Use a dedicated integration account with read roles only. It also needs read access to
+              sys_db_object and sys_dictionary for schema discovery.
+            </span>
+          </label>
+          <label>
+            Tables
+            <input
+              value={tables}
+              onChange={(e) => setTables(e.target.value)}
+              placeholder="incident, change_request"
+            />
+            <span className="hint">
+              Required, comma separated. Nothing outside this list can be discovered or queried — an
+              instance has thousands of tables, so there is deliberately no “everything” option.
             </span>
           </label>
         </>
