@@ -91,13 +91,23 @@ examples/demo_data/     demo CSVs used by the README quickstart
 examples/policies/      example_policies.json (boilerplate ABAC policies)
 scripts/                quickstart.{py,sh}, mint_key.py (named keys), grant.py (allow
                         policies for default-deny), seed_example_policies.py, mcp_dogfood.sh
-.github/workflows/ci.yml  pytest + ruff on a 3.11/3.12 matrix
+.github/workflows/ci.yml  pytest + ruff on a 3.11/3.12 matrix, plus a frontend
+                        build job (npm ci + tsc --noEmit + vite build)
 ```
 
-CI runs pytest and ruff, nothing more. It is regression protection, not an
+CI runs pytest, ruff, and a frontend build. It is regression protection, not an
 authorization check: the route-auth audit found real defects while this exact
-gate was green. CI supplies MySQL, MariaDB, SQL Server and MinIO, so those live
-tests run; live-PG still skips there (no `EIYE_TEST_PG_DSN`).
+gate was green. CI supplies Postgres, MySQL, MariaDB, SQL Server, Oracle and
+MinIO, so **every SQL connector's live tests run there** — the residual skips are
+not database connectors.
+
+The frontend job is separate from `test`, sharing none of its Python matrix or
+containers. It runs `npm ci` (reproducible: the lockfile is committed, unlike
+the Python side) then `npm run build`, which is `tsc --noEmit && vite build`.
+Before it existed the console's TypeScript was checked only by whoever
+remembered to run `tsc` by hand, and that gap produced a real bug — the
+datasource form fell through to the REST branch for an unrecognised type. Each
+new connector adds another branch to that form.
 
 ### The 9 MCP tools (what an agent sees)
 
