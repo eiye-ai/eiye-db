@@ -344,6 +344,7 @@ subject that matches nothing reads as configured and is not.
 | Jira | Issue tracker (Cloud) | structural | ✅ Available (operator API token, project-scoped, GET-only — see below) |
 | ServiceNow | ITSM | structural | ✅ Available (instance credentials, explicit table allowlist, GET-only — see below) |
 | SharePoint / OneDrive | Document library (CSV, text, PDF, XLSX) | structural | ✅ Available (customer Entra app, `*.Selected` scope required, library- and folder-scoped — **item-level ACLs are not applied**, see below) |
+| Google Drive | Drive folder or shared drive (CSV, text, PDF, XLSX, Docs, Sheets) | structural | ✅ Available (customer service account, `drive.readonly` verified at connect, never domain-wide delegation — see below) |
 
 ### The two read-only claims, and why they are not the same claim
 
@@ -373,6 +374,7 @@ suite runs behind a guard sitting at the boundary it actually crosses:
 | File System | `open()` and `Path.open()` | any mode requesting write access fails the test |
 | Confluence · Jira · ServiceNow | HTTP transport | any method other than GET or HEAD fails the test |
 | SharePoint | HTTP transport | as above, except POST to `login.microsoftonline.com` — see the note below |
+| Google Drive | HTTP transport | as above, except POST to `oauth2.googleapis.com` |
 
 Add a `POST`, a `PutObject` or an `open(..., "w")` anywhere on an exercised path
 and the build breaks.
@@ -705,6 +707,62 @@ filesystem connectors use.
 Graph throttles far harder than the other HTTP sources. eiye surfaces the 429
 and its `Retry-After` rather than sleeping and retrying: a connector that
 silently waits turns a governed query into an unbounded one.
+
+### Google Drive sees only what you shared with it
+
+```json
+{
+  "service_account_json": "{ ... the key file from your GCP project ... }",
+  "folder_id": "1a2B3c...",
+  "shared_drive_id": "optional"
+}
+```
+
+**Drive does not have SharePoint's ACL problem, and the difference is worth
+knowing because the two connectors otherwise look alike.** A SharePoint
+application-only token is granted everything beneath its grant, so item-level
+permissions do not apply to it. A Google service account *without* domain-wide
+delegation is not a special principal at all — it is an ordinary account with
+its own email address, and Drive's normal sharing rules apply to it exactly as
+they would to a person. It sees a file if, and only if, someone shared that file,
+its folder, or its shared drive with that address. Even a document shared with
+everyone in the organisation stays invisible to it, because a service account is
+not a member of the Workspace domain.
+
+That makes the access boundary your own sharing decisions, made in the Drive UI
+you already use, and revocable there. It is the best scoping story of any
+connector here. Share one folder with the account's `client_email` and that
+folder is the datasource.
+
+**All of which depends on never using domain-wide delegation, so eiye cannot
+express it.** Delegation is turned on by putting a `sub` claim naming a user into
+the signed assertion, which makes the token an impersonation of that person and
+exposes their entire Drive. eiye never sets `sub`, there is no configuration key
+that would, and the test suite decodes the assertion actually sent and fails the
+build if one ever appears.
+
+**The credential is checked rather than assumed.** Google states the granted
+scope in its token response, and eiye refuses anything outside
+`drive.readonly` and `drive.metadata.readonly` at connect. That is a stronger
+property than the structural tier claims — Google itself refuses a write with
+that token — but it is still labelled structural, because the other half of the
+server-enforced tier is verification against a live server in CI and there is no
+Drive instance to run against. The check that is possible is made; the claim
+that cannot be verified is not made.
+
+Google Docs, Sheets and Slides have no bytes to download, so they are exported —
+a Doc as text, a Sheet as CSV — and reported with a matching extension so the
+same readers the S3 and filesystem connectors use can handle them. There is no
+`q` passthrough: Drive's `q` is a query language with an `in parents` operator,
+and accepting one would let a caller address files outside the configured folder.
+
+Setup:
+
+1. Create a service account in *your own* GCP project and download its JSON key.
+   eiye never operates a Google app on your behalf.
+2. Grant it the `drive.readonly` scope and nothing else.
+3. Share the folder (or add it to the shared drive) with the account's
+   `client_email`. **Do not enable domain-wide delegation.**
 
 ### S3 / MinIO is scoped by prefix, and only ever lists and gets
 

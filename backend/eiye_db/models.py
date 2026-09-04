@@ -45,6 +45,9 @@ class DataSourceType(StrEnum):
     # SharePoint / OneDrive document libraries over Microsoft Graph. Requires a
     # *.Selected scope: eiye refuses a tenant-wide SharePoint credential.
     SHAREPOINT = "sharepoint"
+    # Google Drive via a customer-owned service account. Never domain-wide
+    # delegation: the account sees only what was shared with its address.
+    GDRIVE = "gdrive"
 
 
 class ConnectionStatus(StrEnum):
@@ -205,7 +208,8 @@ class SourceQueryRequest(BaseModel):
     confluence: {"space": "ENG"} or {"page_id": "123"} ·
     jira: {"project": "ENG"} or {"issue_key": "ENG-1"} ·
     servicenow: {"table": "incident"} ·
-    sharepoint: {"path": "rel/file.csv"}."""
+    sharepoint: {"path": "rel/file.csv"} ·
+    gdrive: {"path": "rel/file.csv"}."""
 
     datasource_id: str
     request: dict[str, Any]

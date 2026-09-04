@@ -257,14 +257,20 @@ class SharePointConnector(Connector):
         if self._drive_id:
             return self._drive_id
         hostname, path = self._site()
-        site = await get_json(client, f"{GRAPH}/sites/{hostname}:{path}", auth_hint=AUTH_HINT)
+        site = await get_json(
+            client, f"{GRAPH}/sites/{hostname}:{path}", auth_hint=AUTH_HINT, product="Microsoft Graph"
+        )
         site_id = site.get("id")
         if not site_id:
             raise ConnectorError(f"Graph returned no id for site {hostname}{path}")
 
         library = self._library()
         drives = await get_json(
-            client, f"{GRAPH}/sites/{site_id}/drives", {"$select": "id,name"}, auth_hint=AUTH_HINT
+            client,
+            f"{GRAPH}/sites/{site_id}/drives",
+            {"$select": "id,name"},
+            auth_hint=AUTH_HINT,
+            product="Microsoft Graph",
         )
         available = [d for d in (drives.get("value") or []) if isinstance(d, dict)]
         for drive in available:
@@ -288,7 +294,7 @@ class SharePointConnector(Connector):
         params: dict | None = {"$top": _PAGE_SIZE, "$select": "name,size,folder,file"}
         out: list[dict] = []
         for _ in range(_MAX_REQUESTS):
-            page = await get_json(client, url, params, auth_hint=AUTH_HINT)
+            page = await get_json(client, url, params, auth_hint=AUTH_HINT, product="Microsoft Graph")
             out.extend(v for v in (page.get("value") or []) if isinstance(v, dict))
             next_url = page.get("@odata.nextLink")
             if not next_url:
