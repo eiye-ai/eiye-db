@@ -85,4 +85,8 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.sharepoint import SharePointConnector
 
         return SharePointConnector(config)
+    if type == DataSourceType.GDRIVE:
+        from eiye_db.connectors.gdrive import GoogleDriveConnector
+
+        return GoogleDriveConnector(config)
     raise ConnectorError(f"no connector implemented for type '{type}'")

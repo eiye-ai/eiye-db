@@ -81,6 +81,9 @@ SHORTHAND: dict[str, tuple[str, str, object]] = {
     # The site URL, not a Graph endpoint: the connector resolves the site and
     # library itself, so an operator supplies the address they can see.
     "sharepoint": ("url", "site_url", None),
+    # A folder id rather than a URL: Drive addresses everything by opaque id,
+    # and the datasource is bounded by which folder was shared with the account.
+    "gdrive": ("folder", "folder_id", None),
 }
 
 # How each connector names the thing a query addresses. Mirrors the shapes in
@@ -207,7 +210,8 @@ def main() -> None:
     p.add_argument("--path", help="sqlite: absolute path to the database file")
     p.add_argument("--dsn", help="postgresql / mysql / sqlserver / oracle: connection string")
     p.add_argument("--bucket", help="s3: bucket name (credentials from the AWS environment, or --config)")
-    p.add_argument("--url", help="rest_api / confluence / jira / servicenow: base URL")
+    p.add_argument("--url", help="rest_api / confluence / jira / servicenow / sharepoint: base or site URL")
+    p.add_argument("--folder", help="gdrive: id of the folder shared with the service account")
     p.add_argument("--config", help="extra connector config as JSON, merged over the flag above")
     p.add_argument("--limit", type=int, default=5, help="max rows for the sample query (default 5)")
     p.add_argument("--request", help="override the sample query with a JSON request object")

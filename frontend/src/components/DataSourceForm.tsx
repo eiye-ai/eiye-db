@@ -34,6 +34,12 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   const [siteUrl, setSiteUrl] = useState((existing?.config.site_url as string) ?? "");
   const [library, setLibrary] = useState((existing?.config.library as string) ?? "");
   const [folder, setFolder] = useState((existing?.config.folder as string) ?? "");
+  const [serviceAccountJson, setServiceAccountJson] = useState(() => {
+    const raw = existing?.config.service_account_json;
+    return typeof raw === "string" ? raw : raw ? JSON.stringify(raw, null, 2) : "";
+  });
+  const [folderId, setFolderId] = useState((existing?.config.folder_id as string) ?? "");
+  const [sharedDriveId, setSharedDriveId] = useState((existing?.config.shared_drive_id as string) ?? "");
   const [password, setPassword] = useState((existing?.config.password as string) ?? "");
   const [tables, setTables] = useState(
     Array.isArray(existing?.config.tables) ? (existing?.config.tables as string[]).join(", ") : "",
@@ -81,6 +87,14 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
         password: password.trim(),
         tables: named,
       };
+    }
+    if (type === "gdrive") {
+      // Sent as the raw string. The connector parses it, so a paste that is not
+      // valid JSON gets one error from one place rather than two spellings of it.
+      const cfg: Record<string, unknown> = { service_account_json: serviceAccountJson.trim() };
+      if (folderId.trim()) cfg.folder_id = folderId.trim();
+      if (sharedDriveId.trim()) cfg.shared_drive_id = sharedDriveId.trim();
+      return cfg;
     }
     if (type === "sharepoint") {
       const cfg: Record<string, unknown> = {
@@ -359,6 +373,44 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
               everything under the grant — so every file here is visible to any agent your ABAC policy
               allows.
             </span>
+          </label>
+        </>
+      )}
+
+      {type === "gdrive" && (
+        <>
+          <label>
+            Service account key
+            <textarea
+              rows={6}
+              value={serviceAccountJson}
+              onChange={(e) => setServiceAccountJson(e.target.value)}
+              placeholder='{"type": "service_account", "client_email": "...", "private_key": "..."}'
+            />
+            <span className="hint">
+              The JSON key from your own Google Cloud project — eiye never operates a Google app on
+              your behalf. Grant it <code>drive.readonly</code> and nothing else; a credential that
+              can write is refused at connect.
+            </span>
+          </label>
+          <label>
+            Folder ID
+            <input value={folderId} onChange={(e) => setFolderId(e.target.value)} placeholder="1a2B3c..." />
+            <span className="hint">
+              Share this folder with the service account’s <code>client_email</code>. Unlike
+              SharePoint, Drive’s ordinary sharing rules apply — the account sees only what was
+              shared with it, and sharing with your whole organisation does <strong>not</strong>{" "}
+              reach it.
+            </span>
+          </label>
+          <label>
+            Shared drive ID
+            <input
+              value={sharedDriveId}
+              onChange={(e) => setSharedDriveId(e.target.value)}
+              placeholder="optional"
+            />
+            <span className="hint">Set this only when the content lives in a shared drive.</span>
           </label>
         </>
       )}

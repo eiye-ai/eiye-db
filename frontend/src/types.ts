@@ -10,7 +10,8 @@ export type DataSourceType =
   | "confluence"
   | "jira"
   | "servicenow"
-  | "sharepoint";
+  | "sharepoint"
+  | "gdrive";
 
 export interface DataSource {
   id: string;
@@ -125,6 +126,7 @@ export const TYPE_LABELS: Record<DataSourceType, string> = {
   jira: "Jira",
   servicenow: "ServiceNow",
   sharepoint: "SharePoint",
+  gdrive: "Google Drive",
 };
 
 // What a source is queried *with*, which is not the same question as what it
