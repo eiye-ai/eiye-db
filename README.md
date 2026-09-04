@@ -343,6 +343,7 @@ subject that matches nothing reads as configured and is not.
 | Confluence | Wiki (Cloud) | structural | ✅ Available (operator API token, space-scoped, GET-only — see below) |
 | Jira | Issue tracker (Cloud) | structural | ✅ Available (operator API token, project-scoped, GET-only — see below) |
 | ServiceNow | ITSM | structural | ✅ Available (instance credentials, explicit table allowlist, GET-only — see below) |
+| SharePoint / OneDrive | Document library (CSV, text, PDF, XLSX) | structural | ✅ Available (customer Entra app, `*.Selected` scope required, library- and folder-scoped — **item-level ACLs are not applied**, see below) |
 
 ### The two read-only claims, and why they are not the same claim
 
@@ -370,9 +371,20 @@ suite runs behind a guard sitting at the boundary it actually crosses:
 | REST API | HTTP transport | any method other than GET or HEAD fails the test |
 | S3 / MinIO | botocore `before-call` | any operation outside `ListObjectsV2` / `GetObject` fails the test, before the request leaves the process |
 | File System | `open()` and `Path.open()` | any mode requesting write access fails the test |
+| Confluence · Jira · ServiceNow | HTTP transport | any method other than GET or HEAD fails the test |
+| SharePoint | HTTP transport | as above, except POST to `login.microsoftonline.com` — see the note below |
 
 Add a `POST`, a `PutObject` or an `open(..., "w")` anywhere on an exercised path
-and the build breaks. The guards are themselves mutation-tested — each one has
+and the build breaks.
+
+SharePoint has the one exception, and it is bounded rather than waived. OAuth2
+client credentials are fetched with a POST, so that connector cannot be
+literally GET-only. The alternative — giving the token client its own unguarded
+transport — would have made the claim untestable, because the guard would no
+longer see every request the connector makes. Instead the guard allows POST to
+exactly `login.microsoftonline.com`, records the URLs, and the suite asserts the
+only POST that happened was that one token request. A POST to Graph fails the
+build. The guards are themselves mutation-tested — each one has
 a real write introduced into the connector to confirm it catches it — and they
 raise outside the exception hierarchy the connectors catch, so the connectors'
 own error handling cannot absorb them.
@@ -625,6 +637,74 @@ The account needs read access to `sys_db_object` and `sys_dictionary` for schema
 discovery, plus a read ACL on each table. Use a dedicated integration account
 with read roles only: this connector never writes, but ServiceNow will serve
 whatever the account can see.
+
+### SharePoint applies no item-level permissions, and cannot
+
+```json
+{
+  "tenant_id": "...",
+  "client_id": "...",
+  "client_secret": "...",
+  "site_url": "https://contoso.sharepoint.com/sites/finance",
+  "library": "Documents",
+  "folder": "reports"
+}
+```
+
+**Read this before registering a SharePoint datasource.** Microsoft calculates
+application-only access by looking for a permission record on the resource *or
+on a securable hierarchical parent*. A grant on a site or a library is that
+parent, so this connector reads **everything beneath the grant, regardless of
+unique permissions set on individual files or folders**. Only the delegated
+flow intersects an application's permissions with a user's, and eiye's ABAC
+subject is an API key id rather than an Entra user — there is no user to
+intersect with. `GET /permissions` is also documented as not returning the full
+permission set app-only, so eiye cannot reliably report the ACLs it is not
+applying either.
+
+That is the same contract every other connector offers: a Postgres datasource
+exposes what its login can see, and ABAC decides which agents may query it. It
+is stated this loudly because SharePoint carries an expectation of per-user
+permissions that a purpose-provisioned database login does not. **Scope the
+grant to one document library, and put nothing in it you would not show every
+agent your policy allows.** `folder` narrows it further and is the only thing
+bounding the datasource inside the library.
+
+**eiye refuses a tenant-wide SharePoint credential.** This is the only HTTP
+connector that can inspect its own credential: Entra application-only tokens
+carry a `roles` claim listing the granted application permissions, so the
+connector reads it and rejects `Sites.Read.All`, `Files.Read.All`,
+`Sites.FullControl.All` and their siblings. One of the Selected scopes is
+required — `Sites.Selected`, `Lists.SelectedOperations.Selected`,
+`ListItems.SelectedOperations.Selected` or `Files.SelectedOperations.Selected`.
+An unreadable token is refused too, so the check cannot quietly become optional.
+
+Prefer `Lists.SelectedOperations.Selected` on the single library over
+`Sites.Selected` on the whole site collection. Note that granting below site
+level breaks permission inheritance on that resource and counts against
+SharePoint's unique-security-scope limit; a site-level grant does not.
+
+Setting it up takes three steps, and **missing any one leaves the app with no
+access at all** — which is the point of the Selected model:
+
+1. Register an app in *your own* Entra tenant and consent it a Selected scope.
+   eiye never operates an OAuth app on your behalf.
+2. Have an administrator grant that app a `read` role on the library:
+   `POST /sites/{site-id}/lists/{list-id}/permissions`.
+3. Give eiye the tenant id, client id and secret.
+
+**The Graph search endpoint is never called.** `/search/query` does not enforce
+`Sites.Selected` in application-only mode — it runs against the tenant-wide
+search index — so the obvious way to implement "find a document" would defeat
+the entire scoping model. The test suite fails the build if any request path
+reaches it. `request` is `{"path": "reports/q3.csv"}`, relative to the
+configured folder; there is no search, no `$filter` passthrough and no item-id
+form. Files are extracted with the same CSV/XLSX/PDF/text readers the S3 and
+filesystem connectors use.
+
+Graph throttles far harder than the other HTTP sources. eiye surfaces the 429
+and its `Retry-After` rather than sleeping and retrying: a connector that
+silently waits turns a governed query into an unbounded one.
 
 ### S3 / MinIO is scoped by prefix, and only ever lists and gets
 

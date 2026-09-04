@@ -1,10 +1,10 @@
 """Mechanical proof for the structural read-only tier.
 
-Three connectors — REST, S3 and filesystem — do not get their read-only
-guarantee the way the SQL connectors do. There is no server refusing them a
-write: they simply never ask for one. That claim is real but it was only ever
-provable by reading the code, which is a weaker thing than the SQL connectors
-offer and was documented as such.
+The structural-tier connectors — REST, S3, filesystem, Confluence, Jira,
+ServiceNow and SharePoint — do not get their read-only guarantee the way the SQL
+connectors do. There is no server refusing them a write: they simply never ask
+for one. That claim is real but it was only ever provable by reading the code,
+which is a weaker thing than the SQL connectors offer and was documented as such.
 
 The guards here close that gap. Each one sits at the boundary the connector
 actually crosses — an HTTP transport, a botocore event, a file open — and turns
@@ -58,15 +58,33 @@ class GetOnlyTransport(httpx.AsyncBaseTransport):
     Records what it saw, so a test can assert the guard was actually exercised.
     A guard that never fires is indistinguishable from a guard that is broken,
     and `methods_seen` is what tells the two apart.
+
+    `post_allowed_hosts` exists for one case and should stay that narrow:
+    OAuth2 client credentials. Fetching a bearer token is a POST, so a connector
+    that authenticates that way cannot be literally GET-only. The honest options
+    were to give the token client its own unguarded transport — which would make
+    the claim untestable, because the guard would no longer see every request
+    the connector makes — or to allow POST to exactly the identity provider and
+    record it. This is the second. `posts_seen` carries the URLs, so a test can
+    assert the only POST that happened was the token request it expected.
     """
 
-    def __init__(self, delegate: httpx.AsyncBaseTransport):
+    def __init__(
+        self,
+        delegate: httpx.AsyncBaseTransport,
+        post_allowed_hosts: frozenset[str] = frozenset(),
+    ):
         self.delegate = delegate
+        self.post_allowed_hosts = post_allowed_hosts
         self.methods_seen: list[str] = []
+        self.posts_seen: list[str] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if request.method not in READ_METHODS:
-            raise WriteAttempted(f"{request.method} {request.url}")
+            if request.method == "POST" and request.url.host in self.post_allowed_hosts:
+                self.posts_seen.append(str(request.url))
+            else:
+                raise WriteAttempted(f"{request.method} {request.url}")
         self.methods_seen.append(request.method)
         return await self.delegate.handle_async_request(request)
 

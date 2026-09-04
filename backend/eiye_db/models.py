@@ -42,6 +42,9 @@ class DataSourceType(StrEnum):
     # ServiceNow. Table API only, and the datasource names which tables it may
     # read — there is no "the whole instance" mode.
     SERVICENOW = "servicenow"
+    # SharePoint / OneDrive document libraries over Microsoft Graph. Requires a
+    # *.Selected scope: eiye refuses a tenant-wide SharePoint credential.
+    SHAREPOINT = "sharepoint"
 
 
 class ConnectionStatus(StrEnum):
@@ -201,7 +204,8 @@ class SourceQueryRequest(BaseModel):
     rest_api: {"path": "/endpoint", "params": {...}} ·
     confluence: {"space": "ENG"} or {"page_id": "123"} ·
     jira: {"project": "ENG"} or {"issue_key": "ENG-1"} ·
-    servicenow: {"table": "incident"}."""
+    servicenow: {"table": "incident"} ·
+    sharepoint: {"path": "rel/file.csv"}."""
 
     datasource_id: str
     request: dict[str, Any]

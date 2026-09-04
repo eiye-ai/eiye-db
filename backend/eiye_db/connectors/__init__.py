@@ -81,4 +81,8 @@ def get_connector(type: DataSourceType, config: dict) -> Connector:
         from eiye_db.connectors.servicenow import ServiceNowConnector
 
         return ServiceNowConnector(config)
+    if type == DataSourceType.SHAREPOINT:
+        from eiye_db.connectors.sharepoint import SharePointConnector
+
+        return SharePointConnector(config)
     raise ConnectorError(f"no connector implemented for type '{type}'")

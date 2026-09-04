@@ -78,6 +78,9 @@ SHORTHAND: dict[str, tuple[str, str, object]] = {
     "confluence": ("url", "base_url", None),
     "jira": ("url", "base_url", None),
     "servicenow": ("url", "base_url", None),
+    # The site URL, not a Graph endpoint: the connector resolves the site and
+    # library itself, so an operator supplies the address they can see.
+    "sharepoint": ("url", "site_url", None),
 }
 
 # How each connector names the thing a query addresses. Mirrors the shapes in

@@ -28,6 +28,12 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
   // Confluence calls it a space and Jira calls it a project; a source is never
   // both, so one field carries whichever this type uses.
   const [username, setUsername] = useState((existing?.config.username as string) ?? "");
+  const [tenantId, setTenantId] = useState((existing?.config.tenant_id as string) ?? "");
+  const [clientId, setClientId] = useState((existing?.config.client_id as string) ?? "");
+  const [clientSecret, setClientSecret] = useState((existing?.config.client_secret as string) ?? "");
+  const [siteUrl, setSiteUrl] = useState((existing?.config.site_url as string) ?? "");
+  const [library, setLibrary] = useState((existing?.config.library as string) ?? "");
+  const [folder, setFolder] = useState((existing?.config.folder as string) ?? "");
   const [password, setPassword] = useState((existing?.config.password as string) ?? "");
   const [tables, setTables] = useState(
     Array.isArray(existing?.config.tables) ? (existing?.config.tables as string[]).join(", ") : "",
@@ -75,6 +81,20 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
         password: password.trim(),
         tables: named,
       };
+    }
+    if (type === "sharepoint") {
+      const cfg: Record<string, unknown> = {
+        tenant_id: tenantId.trim(),
+        client_id: clientId.trim(),
+        client_secret: clientSecret.trim(),
+        site_url: siteUrl.trim(),
+      };
+      // Both omitted rather than sent empty: the connector defaults the library
+      // to "Documents", and an empty folder means the whole library, which is
+      // not the same thing as a folder literally named "".
+      if (library.trim()) cfg.library = library.trim();
+      if (folder.trim()) cfg.folder = folder.trim();
+      return cfg;
     }
     if (type === "confluence" || type === "jira") {
       const cfg: Record<string, unknown> = {
@@ -293,6 +313,51 @@ export default function DataSourceForm({ existing, onSaved, onCancel }: Props) {
             <span className="hint">
               Required, comma separated. Nothing outside this list can be discovered or queried — an
               instance has thousands of tables, so there is deliberately no “everything” option.
+            </span>
+          </label>
+        </>
+      )}
+
+      {type === "sharepoint" && (
+        <>
+          <label>
+            Site URL
+            <input
+              value={siteUrl}
+              onChange={(e) => setSiteUrl(e.target.value)}
+              placeholder="https://contoso.sharepoint.com/sites/finance"
+            />
+          </label>
+          <label>
+            Directory (tenant) ID
+            <input value={tenantId} onChange={(e) => setTenantId(e.target.value)} placeholder="a GUID" />
+          </label>
+          <label>
+            Client ID
+            <input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="a GUID" />
+          </label>
+          <label>
+            Client secret
+            <input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            <span className="hint">
+              The app registration needs a <code>*.Selected</code> scope — eiye refuses a tenant-wide
+              SharePoint credential. Consent alone grants nothing: an administrator must also run the
+              matching <code>POST /permissions</code> to give this app a <code>read</code> role on the
+              library.
+            </span>
+          </label>
+          <label>
+            Library
+            <input value={library} onChange={(e) => setLibrary(e.target.value)} placeholder="Documents" />
+          </label>
+          <label>
+            Folder
+            <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="reports" />
+            <span className="hint">
+              Optional, and the only thing bounding this datasource inside the library. Item-level
+              SharePoint permissions are <strong>not</strong> applied — app-only access reads
+              everything under the grant — so every file here is visible to any agent your ABAC policy
+              allows.
             </span>
           </label>
         </>
