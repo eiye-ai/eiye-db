@@ -15,8 +15,28 @@ function commercialMailto() {
   return 'mailto:' + CONTACT_EMAIL + '?subject=' + subject + '&body=' + body;
 }
 
+function evaluationMailto() {
+  const subject = encodeURIComponent('Independent agent evaluation');
+  const body = encodeURIComponent(
+    [
+      'I would like to start an independent agent evaluation ($8,000, two weeks, one agent).',
+      '',
+      'Organization:',
+      'Agent or agent system:',
+      'Intended use:',
+      'Access (the agent, or a staging copy):',
+      'Tests we already run:',
+    ].join('\n')
+  );
+  return 'mailto:' + CONTACT_EMAIL + '?subject=' + subject + '&body=' + body;
+}
+
 document.querySelectorAll('[data-mailto="commercial"]').forEach(function (el) {
   el.setAttribute('href', commercialMailto());
+});
+
+document.querySelectorAll('[data-mailto="evaluation"]').forEach(function (el) {
+  el.setAttribute('href', evaluationMailto());
 });
 
 const header = document.querySelector('.site-header');
