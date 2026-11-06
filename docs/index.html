@@ -3,12 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>eiye — governed query layer for AI agents</title>
-  <meta name="description" content="eiye is a self-hosted semantic surface. Agents query your existing sources over MCP or REST. PII is redacted. Data stays in place.">
+  <title>Independent agent evaluation — eiye</title>
+  <meta name="description" content="A two-week, independent review of an AI agent a team is about to ship. Written verdict with evidence. $8,000, fixed. Email max@eiye.ai.">
+  <link rel="canonical" href="https://eiye.ai/">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    (function () {
+      var sections = { what: 1, flow: 1, built: 1, pricing: 1, start: 1, faq: 1 };
+      var id = location.hash.slice(1);
+      if (sections[id]) location.replace("eiye-db/#" + id);
+    })();
+  </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -20,13 +28,13 @@
         <span></span><span></span>
       </button>
       <nav id="site-nav" class="nav" aria-label="Primary">
-        <a href="#what">What</a>
-        <a href="#flow">Flow</a>
-        <a href="#built">Built</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#start">Start</a>
-        <a href="#faq">FAQ</a>
-        <a href="evaluation/">Evaluate</a>
+        <a href="#top" aria-current="page">Evaluate</a>
+        <a href="eiye-db/#what">What</a>
+        <a href="eiye-db/#flow">Flow</a>
+        <a href="eiye-db/#built">Built</a>
+        <a href="eiye-db/#pricing">Pricing</a>
+        <a href="eiye-db/#start">Start</a>
+        <a href="eiye-db/#faq">FAQ</a>
         <a class="nav-github" href="https://github.com/eiye-ai/eiye-db">GitHub</a>
       </nav>
     </div>
@@ -35,238 +43,123 @@
   <main id="main">
     <section class="hero" id="top">
       <div class="wrap">
-        <p class="kicker">eiye.ai · semantic surface · source-available (BSL 1.1)</p>
-        <h1>Agents query your sources.<br>PII does not leave the path.</h1>
-        <p class="lede">Organizations want AI agents on existing data without copying a lake, standing up a warehouse, or leaking people. eiye is a pass-through governed query layer: register a source, discover schema, answer MCP or REST queries with redaction, access control, and audit on the way through.</p>
+        <p class="kicker">eiye.ai · paid service · available now</p>
+        <h1>Independent agent evaluation.</h1>
+        <p class="lede">A two-week, independent review of an AI agent a team is about to ship. We test it, try to break it, and hand back a written verdict with evidence. $8,000, fixed.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/eiye-ai/eiye-db">Get started on GitHub</a>
-          <a class="btn btn-ghost" href="#pricing">See pricing</a>
+          <a class="btn btn-primary" data-mailto="evaluation" href="mailto:max@eiye.ai?subject=Independent%20agent%20evaluation">Email max@eiye.ai</a>
+          <a class="btn btn-ghost" href="eiye-db/">eiye_db, the product</a>
         </div>
-        <dl class="spec-strip" aria-label="Product facts">
-          <div><dt>Model</dt><dd>Pass-through</dd></div>
-          <div><dt>Host</dt><dd>Self-hosted</dd></div>
-          <div><dt>License</dt><dd>Source-available (BSL 1.1)</dd></div>
-          <div><dt>LLM</dt><dd>Not required</dd></div>
+        <dl class="spec-strip" aria-label="Engagement facts">
+          <div><dt>Term</dt><dd>Two weeks</dd></div>
+          <div><dt>Price</dt><dd>$8,000 fixed</dd></div>
+          <div><dt>Scope</dt><dd>One agent</dd></div>
+          <div><dt>Payment</dt><dd>Half, then half</dd></div>
         </dl>
       </div>
     </section>
 
-    <section class="section" id="what">
+    <section class="section" id="who">
       <div class="wrap">
         <p class="section-n">01</p>
-        <h2>What it is. What it is not.</h2>
-        <p class="section-lead">eiye sits in front of data you already run. It is a semantic surface, not another place to put the data.</p>
-        <div class="split">
-          <article class="panel is">
-            <h3>Is</h3>
-            <ul>
-              <li>A governed query layer so agents can reach existing sources without leaking PII</li>
-              <li>Pass-through: data stays in the customer’s sources</li>
-              <li>Self-hosted, source-available (BSL 1.1) — free up to 5 sources and 1,000 queries/month</li>
-              <li>MCP tools: <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code> — or REST</li>
-              <li>PII redaction, access control, and audit on every query</li>
-              <li>Optional cache on the path back to the source</li>
-            </ul>
-          </article>
-          <article class="panel is-not">
-            <h3>Is not</h3>
-            <ul>
-              <li>A warehouse</li>
-              <li>ETL</li>
-              <li>A copy of your lake</li>
-              <li>BI dashboards</li>
-              <li>Email marketing</li>
-              <li>A hosted data plane that takes your records</li>
-            </ul>
-          </article>
-        </div>
+        <h2>Who this is for</h2>
+        <article class="panel">
+          <p class="prose">Teams about to put an agent in front of customers, employees, or a client demo — especially if the agent uses tools, retrieval, or multiple steps, and they need someone who did not build it to say whether it is ready.</p>
+        </article>
       </div>
     </section>
 
-    <section class="section" id="flow">
+    <section class="section" id="work">
       <div class="wrap">
         <p class="section-n">02</p>
-        <h2>How a query moves</h2>
-        <p class="section-lead">Nothing is extracted into eiye for safekeeping. The query walks this path and returns. The source remains the source of truth.</p>
-        <ol class="flow" aria-label="Query path">
+        <h2>What we do</h2>
+        <p class="section-lead">Two weeks. Independent of the people who built the agent.</p>
+        <ol class="steps">
           <li>
             <span class="flow-n">01</span>
-            <strong>Register source</strong>
-            <span>Postgres, a filesystem root, or a REST GET endpoint.</span>
+            <div>
+              <strong>Agree what “good” means</strong>
+              <p>Jobs the agent should do, and jobs it must not do.</p>
+            </div>
           </li>
           <li>
             <span class="flow-n">02</span>
-            <strong>Schema discovery</strong>
-            <span>eiye maps what the source will answer.</span>
+            <div>
+              <strong>Run held-out tasks</strong>
+              <p>Including cases the team may not have tested.</p>
+            </div>
           </li>
           <li>
             <span class="flow-n">03</span>
-            <strong>Agent query</strong>
-            <span>MCP stdio or REST. Three tools. Read-only.</span>
+            <div>
+              <strong>Probe the obvious failure modes</strong>
+              <p>Skipped steps, bad tool use, made-up answers, policy or permission slip-throughs, and cases that look improved but still are not correct.</p>
+            </div>
           </li>
           <li>
             <span class="flow-n">04</span>
-            <strong>Govern</strong>
-            <span>PII redaction + access control + audit.</span>
-          </li>
-          <li>
-            <span class="flow-n">05</span>
-            <strong>Optional cache</strong>
-            <span>Then through to the source. Data does not relocate.</span>
+            <div>
+              <strong>Stay independent of the builders</strong>
+              <p>The review is not done by the people who built the agent.</p>
+            </div>
           </li>
         </ol>
-        <p class="flow-note">Path: register → discover → query → redact / ACL / audit → optional cache → source.</p>
       </div>
     </section>
 
-    <section class="section" id="built">
+    <section class="section" id="deliver">
       <div class="wrap">
         <p class="section-n">03</p>
-        <h2>Built now. Labeled as roadmap.</h2>
-        <p class="section-lead">eiye does not require an LLM. Agents call tools. A natural-language conductor is planned; it is not in the product today.</p>
-        <div class="split split-uneven">
+        <h2>What you get. What this is not.</h2>
+        <p class="section-lead">A written verdict with evidence. Not a build, and not a piece of software.</p>
+        <div class="split">
           <article class="panel">
-            <h3>Built</h3>
-            <ul class="spec-list">
-              <li><span>Connectors</span> PostgreSQL · MySQL/MariaDB · SQL Server · SQLite · filesystem and S3/MinIO (CSV, text, PDF, XLSX) · REST GET</li>
-              <li><span>PII</span> Regex redaction; optional spaCy NER</li>
-              <li><span>Console</span> React</li>
-              <li><span>Auth</span> API keys</li>
-              <li><span>Agents</span> MCP stdio — <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code></li>
+            <h3>You get</h3>
+            <ul>
+              <li>A written verdict: what held, what failed, and the severity</li>
+              <li>Evidence for each finding: inputs, outputs, and what was expected</li>
+              <li>A short ranked list of fixes before shipping</li>
+              <li>A walkthrough</li>
             </ul>
           </article>
-          <article class="panel dim">
-            <h3>Roadmap</h3>
-            <ul class="spec-list">
-              <li><span>Access</span> Real ABAC (API keys today)</li>
-              <li><span>Conductor</span> Natural-language conductor</li>
+          <article class="panel is-not">
+            <h3>This is not</h3>
+            <ul>
+              <li>A build, a rewrite, or a monitoring subscription</li>
+              <li>A downloadable plugin, or a package you can npm-install</li>
+              <li>eiye_db, and not a new software tier</li>
+              <li>Implementing the fixes, or standing the agent up — that is a separate engagement</li>
             </ul>
-            <p class="quiet">Commercial-license features: SSO, compliance reports, multi-tenant control plane, advanced analytics.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="section" id="pricing">
+    <section class="section" id="price">
       <div class="wrap">
         <p class="section-n">04</p>
-        <h2>Pricing</h2>
-        <p class="section-lead">Free to run up to 5 sources and 1,000 queries/month — that limit is the license grant itself, not a trial. Paid tiers raise it. Subscribe on Stripe. Enterprise is custom.</p>
-        <div class="table-wrap">
-          <table class="pricing">
-            <thead>
-              <tr>
-                <th scope="col">Tier</th>
-                <th scope="col">Datasources</th>
-                <th scope="col">Queries / mo</th>
-                <th scope="col">Price</th>
-                <th scope="col">Buy</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">Free</th>
-                <td>5</td>
-                <td>1,000</td>
-                <td><code>$0</code></td>
-                <td><a href="https://github.com/eiye-ai/eiye-db">GitHub</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Starter</th>
-                <td>15</td>
-                <td>25,000</td>
-                <td><code>$100/mo</code></td>
-                <td><a class="btn btn-primary btn-compact" href="https://buy.stripe.com/14AcMTbKPewvetF9hvf7i01" target="_blank" rel="noopener noreferrer">Subscribe</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Pro</th>
-                <td>50</td>
-                <td>250,000</td>
-                <td><code>$500/mo</code></td>
-                <td><a class="btn btn-primary btn-compact" href="https://buy.stripe.com/8x24gn4in5ZZfxJ8drf7i02" target="_blank" rel="noopener noreferrer">Subscribe</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Business</th>
-                <td>150</td>
-                <td>1,000,000</td>
-                <td><code>$2,000/mo</code></td>
-                <td><a class="btn btn-primary btn-compact" href="https://buy.stripe.com/cNicMT16bcon2KX9hvf7i03" target="_blank" rel="noopener noreferrer">Subscribe</a></td>
-              </tr>
-              <tr>
-                <th scope="row">Enterprise</th>
-                <td colspan="2">Custom limits, SSO, compliance reports, multi-tenant control plane, advanced analytics</td>
-                <td>Custom</td>
-                <td><a data-mailto="commercial" href="mailto:max@eiye.ai?subject=eiye%20commercial%20inquiry">Contact</a></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="pricing-note">The Free tier is a license grant, not just a limit: the <a href="https://github.com/eiye-ai/eiye-db/blob/main/LICENSE">BSL 1.1</a> permits production use up to 5 datasources and 1,000 queries/month at no charge. Beyond that, or to offer eiye as a hosted service, requires a commercial license. Starter, Pro, and Business subscribe on Stripe; we email the license after payment. Paid tiers also unlock SSO, compliance reports, multi-tenant control plane, and advanced analytics. Enterprise stays a conversation: <a data-mailto="commercial" href="mailto:max@eiye.ai?subject=eiye%20commercial%20inquiry">ask about a commercial license</a>.</p>
-      </div>
-    </section>
-
-    <section class="section" id="start">
-      <div class="wrap">
-        <p class="section-n">05</p>
-        <h2>Get started</h2>
-        <p class="section-lead">Primary path is the repo. One script registers a source, discovers schema, runs a governed query, and prints the MCP connect command.</p>
-        <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/eiye-ai/eiye-db">Open github.com/eiye-ai/eiye-db</a>
-        </div>
-        <pre class="code" tabindex="0"><code>git clone https://github.com/eiye-ai/eiye-db.git
-cd eiye-db
-scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
-#   or:  --type postgresql --dsn postgresql://user:pass@host/db
-#   or:  --type rest_api    --url https://api.example.com</code></pre>
-        <p class="quiet">Connect an agent (from the README):</p>
-        <pre class="code" tabindex="0"><code>claude mcp add eiye-db -- /path/to/backend/.venv/bin/python -m eiye_db.mcp_server</code></pre>
-        <p class="quiet">Tools the agent gets: <code>list_datasources</code>, <code>get_schema</code>, <code>query_datasource</code> — read-only, PII-redacted, audited.</p>
-      </div>
-    </section>
-
-    <section class="section" id="faq">
-      <div class="wrap">
-        <p class="section-n">06</p>
-        <h2>FAQ</h2>
-        <div class="faq">
-          <details open>
-            <summary>Do you take our data?</summary>
-            <p>No. eiye is pass-through. Data stays in your sources. There is no warehouse, no ETL job, and no copy of the lake. You self-host it. Queries go to the source; redaction, access control, and audit sit on that path.</p>
-          </details>
-          <details>
-            <summary>Is this a warehouse, a catalog, or an ETL tool?</summary>
-            <p>No. Non-goals: ETL, warehouse, BI dashboards, email marketing. eiye is a governed query layer in front of systems you already operate.</p>
-          </details>
-          <details>
-            <summary>Do we need an LLM inside eiye?</summary>
-            <p>No. eiye does not require an LLM. Agents call MCP or REST. A natural-language conductor is on the roadmap and is labeled as such — it is not required to run the surface today.</p>
-          </details>
-          <details>
-            <summary>What does source-available mean here?</summary>
-            <p>The full source is public and auditable — connectors, PII engine, access control, audit, MCP, REST, React console — but it is not open source in the OSI sense, and we do not call it that. eiye is licensed under the <a href="https://github.com/eiye-ai/eiye-db/blob/main/LICENSE">Business Source License 1.1</a>: read it, run it, modify it, and use it in production free of charge up to 5 datasources and 1,000 queries per month. Larger production use, or offering eiye to third parties as a hosted service, requires a commercial license. Each release converts to Apache-2.0 four years after publication, so nothing is enclosed permanently.</p>
-          </details>
-          <details>
-            <summary>How is PII handled?</summary>
-            <p>On the query path. Baseline redaction is regex. Optional spaCy NER for names and locations. Combined with access control and a recorded audit trail.</p>
-          </details>
-          <details>
-            <summary>What can we point it at today?</summary>
-            <p>PostgreSQL, a filesystem root (CSV, text, PDF, XLSX), and REST GET. That is what is built now — not a promise list.</p>
-          </details>
-        </div>
-      </div>
-    </section>
-
-    <section class="offer-band" id="evaluate" aria-labelledby="evaluate-title">
-      <div class="wrap offer-band-inner">
-        <div>
-          <p class="kicker">Service · available now</p>
-          <h2 id="evaluate-title">Independent agent evaluation</h2>
-          <p>A two-week, independent review of an AI agent a team is about to ship. We test it, try to break it, and hand back a written verdict with evidence. $8,000, fixed. A service, not a software tier and not a download.</p>
-        </div>
-        <div class="cta-row">
-          <a class="btn btn-primary" href="evaluation/">Read the offer</a>
-          <a class="btn btn-ghost" data-mailto="evaluation" href="mailto:max@eiye.ai?subject=Independent%20agent%20evaluation">Email max@eiye.ai</a>
+        <h2>Price, and how to start</h2>
+        <p class="section-lead">$8,000, fixed, for one nominated agent or agent system. Half before we start, half when we deliver the report.</p>
+        <div class="split">
+          <article class="panel">
+            <h3>We start when we have</h3>
+            <ul>
+              <li>Access to the agent, or a staging copy</li>
+              <li>A short description of intended use</li>
+              <li>Any tests the team already runs</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <h3>Contact</h3>
+            <ul>
+              <li><a data-mailto="evaluation" href="mailto:max@eiye.ai?subject=Independent%20agent%20evaluation">max@eiye.ai</a></li>
+              <li>No checkout button. This is not a self-serve software tier.</li>
+              <li><a href="eiye-db/#pricing">eiye_db pricing</a> ($0 / $100 / $500 / $2,000) is unchanged</li>
+            </ul>
+            <div class="cta-row">
+              <a class="btn btn-primary" data-mailto="evaluation" href="mailto:max@eiye.ai?subject=Independent%20agent%20evaluation">Email max@eiye.ai</a>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -274,12 +167,11 @@ scripts/quickstart.sh --name mydata --type filesystem --root /path/to/a/folder
 
   <footer class="site-footer">
     <div class="wrap footer-inner">
-      <p><strong>eiye</strong> · eiye.ai · self-hosted semantic surface</p>
+      <p><strong>eiye</strong> · eiye.ai · independent agent evaluation</p>
       <p>
-        <a href="https://github.com/eiye-ai/eiye-db">GitHub</a>
-        · <a href="#pricing">Pricing</a>
-        · <a href="evaluation/">Agent evaluation</a>
-        · Source-available (BSL 1.1)
+        <a href="eiye-db/">eiye_db</a>
+        · <a href="eiye-db/#pricing">Software pricing</a>
+        · <a data-mailto="evaluation" href="mailto:max@eiye.ai?subject=Independent%20agent%20evaluation">max@eiye.ai</a>
       </p>
     </div>
   </footer>

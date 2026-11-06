@@ -106,6 +106,7 @@ code {
 }
 .nav a:hover,
 .nav a[aria-current="page"] { color: var(--ink); }
+.nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--amber); }
 .nav-github {
   color: var(--bg) !important;
   background: var(--amber);
@@ -529,6 +530,7 @@ code {
   .nav a {
     padding: 0.7rem var(--gutter);
   }
+  .nav a[aria-current="page"] { box-shadow: none; }
   .nav-github {
     margin: 0.4rem var(--gutter);
     text-align: center;
